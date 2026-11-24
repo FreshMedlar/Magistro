@@ -154,6 +154,34 @@ export const CUSTOM_PROVIDER = {
 	label: "Custom endpoint",
 } as const;
 
+/**
+ * The Magistro hosted/local token proxy provider. Points the app's LLM calls
+ * to the separate OpenAI-compatible proxy backend (Phase 1 / 2) using an
+ * env-configured or user-saved personal API token (`MAGISTRO_API_KEY`).
+ */
+export const MAGISTRO_PROVIDER = {
+	id: "magistro",
+	envVar: "MAGISTRO_API_KEY",
+	baseUrlEnvVar: "MAGISTRO_API_BASE_URL",
+	label: "Magistro",
+	defaultBaseUrl: "http://localhost:8000/v1",
+} as const;
+
+/** Resolve the Magistro proxy base URL from env, falling back to localhost. */
+export function resolveMagistroBaseUrl(rawUrl: string | undefined = undefined): string {
+	const candidate = rawUrl?.trim();
+	if (!candidate) return MAGISTRO_PROVIDER.defaultBaseUrl;
+	try {
+		const url = new URL(candidate);
+		if ((url.protocol !== "http:" && url.protocol !== "https:") || url.username || url.password || url.search || url.hash) {
+			return MAGISTRO_PROVIDER.defaultBaseUrl;
+		}
+		return candidate.replace(/\/+$/, "");
+	} catch {
+		return MAGISTRO_PROVIDER.defaultBaseUrl;
+	}
+}
+
 /** Every distinct env var a model-provider key rides in (the write side's
  *  writability check — see isProviderEnvVar below; also drives which
  *  PRESENT provider vars surface as status rows). */
