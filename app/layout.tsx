@@ -17,8 +17,8 @@ const ui = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jetbrains" });
 const prose = Source_Sans_3({ subsets: ["latin"], variable: "--font-sans3" });
 
 export const metadata: Metadata = {
-	title: "Learning Harness",
-	description: "A teacher agent with a memory — sessions, quizzes, and a knowledge graph of what you know.",
+	title: "Magistro",
+	description: "Magistro — a teacher agent with a memory: adaptive sessions, practice, and a knowledge graph of what you know.",
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {

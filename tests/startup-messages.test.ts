@@ -41,14 +41,16 @@ it("validates the whole v1 feed including byte lengths, IDs and actual UTC dates
 	assert.ok(selectMessage(feed({ ...newest, title: "é".repeat(128), bodyMarkdown: "😀".repeat(8192), id: "x".repeat(96) }), new Set()));
 });
 
-it("fetches once without credentials and offers only the latest message across launches", async t => {
+const feedUrl = "http://localhost:8000/startup-messages.json";
+
+it("fetches once without credentials from configured feedUrl and offers only the latest message across launches", async t => {
 	const profile = await mkdtemp(join(tmpdir(), "lh-startup-message-"));
 	t.after(() => rm(profile, { recursive: true, force: true }));
 	let requests = 0;
 	let messages = [first, newest];
 	const fetchImpl = async (url: string, init: RequestInit) => {
 		requests++;
-		assert.equal(url, "https://learnharness.ai/startup-messages.json");
+		assert.equal(url, feedUrl);
 		assert.equal(init.redirect, "error");
 		assert.equal(init.credentials, "omit");
 		assert.equal(init.referrerPolicy, "no-referrer");
@@ -56,7 +58,7 @@ it("fetches once without credentials and offers only the latest message across l
 	};
 	const launch = () => {
 		const win = fakeWindow();
-		const service = startMessages(win, dismissalStore(profile), { fetchImpl });
+		const service = startMessages(win, dismissalStore(profile), { fetchImpl, feedUrl });
 		win.emit("ready-to-show");
 		return service;
 	};
@@ -85,7 +87,7 @@ it("returns silently for HTTP, JSON, UTF-8, and streamed oversize failures", asy
 	}), { headers: { "Content-Length": "100", "Content-Encoding": "gzip" } });
 	for (const response of [new Response("", { status: 404 }), new Response("{"), new Response(Uint8Array.of(0xff)), oversized]) {
 		const win = fakeWindow();
-		const service = startMessages(win, emptyStore(), { fetchImpl: async () => response });
+		const service = startMessages(win, emptyStore(), { fetchImpl: async () => response, feedUrl });
 		win.emit("ready-to-show");
 		assert.equal(await service.take(), null);
 	}
@@ -114,6 +116,7 @@ it("skips and aborts when the first window is no longer quiet or the deadline el
 		let aborted = false;
 		const service = startMessages(win, emptyStore(), {
 			windowMs: 15,
+			feedUrl,
 			fetchImpl: (_url: string, { signal }: { signal: AbortSignal }) => new Promise((_resolve, reject) => signal.addEventListener("abort", () => { aborted = true; reject(signal.reason); })),
 		});
 		win.emit("ready-to-show");
@@ -128,7 +131,7 @@ it("skips and aborts when the first window is no longer quiet or the deadline el
 
 it("allows the same-URL history update during hydration without cancelling startup", async () => {
 	const win = fakeWindow();
-	const service = startMessages(win, emptyStore(), { fetchImpl: async () => Response.json(feed(newest)) });
+	const service = startMessages(win, emptyStore(), { feedUrl, fetchImpl: async () => Response.json(feed(newest)) });
 	const url = "http://127.0.0.1:9000/";
 	win.webContents.emit("did-start-navigation", { isMainFrame: true, isSameDocument: false, url });
 	win.emit("ready-to-show");
@@ -139,7 +142,7 @@ it("allows the same-URL history update during hydration without cancelling start
 it("waits for paint and first focus within the startup window without focusing the window itself", async () => {
 	const win = fakeWindow();
 	win.isFocused = () => false;
-	const service = startMessages(win, emptyStore(), { fetchImpl: async () => Response.json(feed(newest)) });
+	const service = startMessages(win, emptyStore(), { feedUrl, fetchImpl: async () => Response.json(feed(newest)) });
 	let settled = false;
 	const result = service.take().then((offer: unknown) => { settled = true; return offer; });
 	await new Promise<void>(resolve => setImmediate(resolve));
@@ -152,20 +155,15 @@ it("waits for paint and first focus within the startup window without focusing t
 	assert.deepEqual((await result as { message: unknown }).message, newest);
 });
 
-it("has exactly one publication-only, tag-only website notifier", () => {
-	const { load } = require("js-yaml");
-	const file = (name: string) => readFileSync(new URL(`../.github/workflows/${name}.yml`, import.meta.url), "utf8");
-	const { on, permissions, jobs } = load(file("notify-website"));
-	assert.deepEqual(on, { release: { types: ["published"] } });
-	assert.deepEqual(permissions, {});
-	assert.deepEqual(Object.keys(jobs), ["notify-website"]);
-	assert.throws(() => file("notify-website-announcement"), { code: "ENOENT" });
-	const job = jobs["notify-website"];
-	assert.match(job.if, /github\.repository == 'amosblomqvist\/learnharness'/);
-	assert.match(job.if, /!github\.event\.release\.draft && !github\.event\.release\.prerelease/);
-	assert.equal(job.steps.length, 1);
-	assert.deepEqual(job.steps[0].env, { WEBSITE_DISPATCH_TOKEN: "${{ secrets.WEBSITE_DISPATCH_TOKEN }}", RELEASE_TAG: "${{ github.event.release.tag_name }}" });
-	assert.match(job.steps[0].run, /event_type:"desktop-release-published",client_payload:\{tag:\$tag\}/);
-	assert.equal([...job.steps[0].run.matchAll(/--request POST\b/g)].length, 1);
-	assert.match(job.steps[0].run, /https:\/\/api\.github\.com\/repos\/amosblomqvist\/learnharness-web\/dispatches/);
+it("makes no outbound request when no startup feed URL is configured and has no upstream website notifier", async () => {
+	const win = fakeWindow();
+	let called = false;
+	const service = startMessages(win, emptyStore(), {
+		feedUrl: "",
+		fetchImpl: async () => { called = true; return Response.json(feed(newest)); },
+	});
+	win.emit("ready-to-show");
+	assert.equal(await service.take(), null);
+	assert.equal(called, false);
+	assert.throws(() => readFileSync(new URL("../.github/workflows/notify-website.yml", import.meta.url), "utf8"), { code: "ENOENT" });
 });

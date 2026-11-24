@@ -2,7 +2,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { randomUUID } = require("node:crypto");
 
-const FEED_URL = "https://learnharness.ai/startup-messages.json";
+const DEFAULT_FEED_URL = process.env.MAGISTRO_STARTUP_MESSAGES_URL || "";
 const MAX_FEED_BYTES = 2 * 1024 * 1024;
 const STARTUP_WINDOW_MS = 3000;
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,95}$/;
@@ -36,8 +36,9 @@ function selectMessage(feed, dismissed) {
 	return newest && !dismissed.has(newest.id) ? newest : null;
 }
 
-async function fetchFeed(signal, fetchImpl) {
-	const response = await fetchImpl(FEED_URL, {
+async function fetchFeed(signal, fetchImpl, feedUrl = DEFAULT_FEED_URL) {
+	if (!feedUrl) return null;
+	const response = await fetchImpl(feedUrl, {
 		credentials: "omit", referrerPolicy: "no-referrer", redirect: "error", signal,
 		headers: { Accept: "application/json" },
 	});
@@ -99,7 +100,7 @@ function dismissalStore(profileDir) {
 
 // Own just the first desktop window in this launch. Observations never prevent
 // any native or web input. Closing/reopening the window is not another launch.
-function startMessages(win, store, { fetchImpl = globalThis.fetch, windowMs = STARTUP_WINDOW_MS } = {}) {
+function startMessages(win, store, { fetchImpl = globalThis.fetch, windowMs = STARTUP_WINDOW_MS, feedUrl = DEFAULT_FEED_URL } = {}) {
 	const { webContents } = win;
 	const lifetime = new AbortController();
 	const stop = () => lifetime.abort();
@@ -143,7 +144,7 @@ function startMessages(win, store, { fetchImpl = globalThis.fetch, windowMs = ST
 		webContents.removeListener("did-start-navigation", onNavigate);
 	}, { once: true });
 	// Let createWindow initiate the local navigation before doing any feed work.
-	const candidate = Promise.resolve().then(() => lifetime.signal.aborted ? [] : Promise.all([fetchFeed(lifetime.signal, fetchImpl), store.read(), ready]))
+	const candidate = Promise.resolve().then(() => lifetime.signal.aborted ? [] : Promise.all([fetchFeed(lifetime.signal, fetchImpl, feedUrl), store.read(), ready]))
 		.then(([feed, ids, shown]) => shown && { message: selectMessage(feed, ids), ids })
 		.catch(() => null);
 	let requested = false;

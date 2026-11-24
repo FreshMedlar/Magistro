@@ -1,14 +1,14 @@
 {
-	"name": "learnharness",
+	"name": "magistro",
 	"version": "0.7.0",
 	"license": "AGPL-3.0-only",
 	"author": {
-		"name": "Amos Blomqvist",
-		"email": "255718537+amosblomqvist@users.noreply.github.com"
+		"name": "FreshMedlar",
+		"email": "emaxtiger3000@gmail.com"
 	},
-	"homepage": "https://github.com/amosblomqvist/learnharness",
-	"desktopName": "learnharness.desktop",
-	"description": "An agent harness for learning: adaptive teaching, practice, and a persistent knowledge graph.",
+	"homepage": "https://github.com/FreshMedlar/Magistro",
+	"desktopName": "magistro.desktop",
+	"description": "Magistro — an agent harness for learning: adaptive teaching, practice, and a persistent knowledge graph.",
 	"type": "module",
 	"private": true,
 	"main": "electron/main.cjs",
