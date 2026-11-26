@@ -52,26 +52,26 @@ describe("SettingsDialog (the designed surface, SSR)", () => {
 		assert.ok(!html.includes("settings-dialog"));
 	});
 
-	it("built-in navigation uses the agreed decorative Lucide icons without changing labels or selection", () => {
+	it("built-in navigation hides Providers and Community plugins in standard-user mode and uses agreed Lucide icons", () => {
 		const { document } = parseHTML(renderToStaticMarkup(<SettingsDialogBody onClose={() => {}} />));
 		const expected = [
-			["keys", "Providers", "key"],
 			["agent", "Agent", "bot"],
 			["appearance", "Appearance", "palette"],
 			["graph", "Graph", "waypoints"],
 			["keyboard", "Keyboard", "keyboard"],
 			["general", "General", "settings"],
 			["core-plugins", "Core plugins", "plug"],
-			["plugins", "Community plugins", "puzzle"],
 		];
-		assert.ok(document.querySelector('[data-testid="settings-nav"]')!.classList.contains("w-48"), "approved 192px sidebar leaves room for the icon and Community plugins label");
+		assert.ok(document.querySelector('[data-testid="settings-nav"]')!.classList.contains("w-48"), "approved 192px sidebar leaves room for the icon and labels");
 		assert.ok(document.querySelector('[data-testid="settings-dialog"]')!.classList.contains("w-[920px]"), "overall dialog width is unchanged");
 		const buttons = [...document.querySelectorAll('[data-testid="settings-nav"] button')];
 		assert.deepEqual(buttons.map(button => button.textContent), expected.map(([, label]) => label));
+		assert.equal(document.querySelector('[data-testid="settings-nav-keys"]'), null);
+		assert.equal(document.querySelector('[data-testid="settings-nav-plugins"]'), null);
 		for (const [id, label, iconName] of expected) {
 			const button = document.querySelector(`[data-testid="settings-nav-${id}"]`)!;
 			assert.equal(button.textContent, label);
-			assert.equal(button.getAttribute("aria-current"), String(id === "keys"));
+			assert.equal(button.getAttribute("aria-current"), String(id === "agent"));
 			const icons = button.querySelectorAll("svg");
 			assert.equal(icons.length, 1);
 			const icon = icons[0]!;
@@ -85,18 +85,41 @@ describe("SettingsDialog (the designed surface, SSR)", () => {
 		}
 	});
 
-	it("the dialog frame: role=dialog + the ✕ + the six-section nav, Providers first and General last", () => {
+	it("unrestricted mode keeps Providers and Community plugins with Providers first and General closing native settings", () => {
+		const { document } = parseHTML(renderToStaticMarkup(<SettingsDialogBody restricted={false} onClose={() => {}} />));
+		const expected = [
+			["keys", "Providers", "key"],
+			["agent", "Agent", "bot"],
+			["appearance", "Appearance", "palette"],
+			["graph", "Graph", "waypoints"],
+			["keyboard", "Keyboard", "keyboard"],
+			["general", "General", "settings"],
+			["core-plugins", "Core plugins", "plug"],
+			["plugins", "Community plugins", "puzzle"],
+		];
+		const buttons = [...document.querySelectorAll('[data-testid="settings-nav"] button')];
+		assert.deepEqual(buttons.map(button => button.textContent), expected.map(([, label]) => label));
+		assert.equal(document.querySelector('[data-testid="settings-nav-keys"]')?.getAttribute("aria-current"), "true");
+	});
+
+	it("the dialog frame: role=dialog + the ✕ + Agent first and General closing native settings, redirecting hidden deep links", () => {
 		const html = renderToStaticMarkup(<SettingsDialogBody onClose={() => {}} />);
 		assert.ok(html.includes('role="dialog"'));
 		assert.ok(html.includes('aria-modal="true"'));
 		assert.ok(html.includes('aria-label="Close settings"'));
-		for (const id of ["general", "keys", "agent", "appearance", "graph", "keyboard"]) {
+		for (const id of ["general", "agent", "appearance", "graph", "keyboard", "core-plugins"]) {
 			assert.ok(html.includes(`data-testid="settings-nav-${id}"`), id);
 		}
-		// Providers is the first landing section; internal keys deep links survive.
-		assert.ok(tagOf(html, "settings-nav-keys").includes('aria-current="true"'));
-		assert.ok(html.indexOf('data-testid="settings-nav-keys"') < html.indexOf('data-testid="settings-nav-general"'));
+		assert.ok(!html.includes('data-testid="settings-nav-keys"'));
+		assert.ok(!html.includes('data-testid="settings-nav-plugins"'));
+		// Agent is the first landing section; hidden keys/plugins deep links redirect to Agent.
+		assert.ok(tagOf(html, "settings-nav-agent").includes('aria-current="true"'));
+		assert.ok(html.indexOf('data-testid="settings-nav-agent"') < html.indexOf('data-testid="settings-nav-general"'));
 		assert.ok(tagOf(html, "settings-nav-keyboard").includes('aria-current="false"'));
+		for (const hiddenSection of ["keys", "plugins"] as const) {
+			const redirected = renderToStaticMarkup(<SettingsDialogBody initialSection={hiddenSection} onClose={() => {}} />);
+			assert.ok(tagOf(redirected, "settings-nav-agent").includes('aria-current="true"'), `${hiddenSection} redirects to agent`);
+		}
 		// Fetches don't run under SSR — the loading state IS the SSR state.
 		assert.ok(html.includes("Loading settings…"));
 		// Modal-only doctrine: no link back to /settings anywhere in it.
@@ -107,7 +130,7 @@ describe("SettingsDialog (the designed surface, SSR)", () => {
 describe("the shared settings dropdown trigger", () => {
 	it("Agent, Appearance and dictation use the same compact dark mono trigger", () => {
 		const surfaces = [
-			[renderToStaticMarkup(<AgentSection agent={undefined} models={undefined} graph={undefined} onSectionChange={() => true} onModelsChange={() => {}} />), "slot-model-strong"],
+			[renderToStaticMarkup(<AgentSection restricted={false} agent={undefined} models={undefined} graph={undefined} onSectionChange={() => true} onModelsChange={() => {}} />), "slot-model-strong"],
 			[renderToStaticMarkup(<AppearanceSection appearance={undefined} onSectionChange={() => true} />), "font-trigger"],
 			[renderToStaticMarkup(<DictationLanguageSetting />), "dictation-language"],
 		] as const;
@@ -151,9 +174,10 @@ describe("Providers settings-label typography", () => {
 });
 
 describe("AgentSection (thin SSR)", () => {
-	it("reasoning token estimation is an accessible Context toggle, off by default and reflecting saved choices", () => {
+	it("reasoning token estimation is an accessible Context toggle in unrestricted mode, off by default and reflecting saved choices", () => {
 		for (const includeReasoning of [undefined, false, true]) {
 			const html = renderToStaticMarkup(<AgentSection
+				restricted={false}
 				agent={undefined} models={undefined} graph={undefined}
 				compaction={includeReasoning === undefined ? undefined : { thresholdTokens: 120_000, includeReasoning }}
 				onSectionChange={() => {}} onModelsChange={() => {}} onCompactionChange={() => {}}
@@ -169,9 +193,21 @@ describe("AgentSection (thin SSR)", () => {
 				"the opt-in sits below the threshold within Context");
 		}
 	});
+	it("standard-user AgentSection hides Models, System prompts, and reasoning token estimation while keeping Tools and Compaction threshold", () => {
+		const html = renderToStaticMarkup(<AgentSection agent={undefined} models={undefined} graph={undefined} onSectionChange={() => true} onModelsChange={() => {}} />);
+		assert.ok(!html.includes('data-testid="group-models"'), "Models sub-group hidden");
+		assert.ok(!html.includes('data-testid="group-prompts"'), "System prompts sub-group hidden");
+		assert.ok(!html.includes('data-testid="slot-model-strong"'), "model selectors hidden");
+		assert.ok(!html.includes('data-testid="input-worker-request-concurrency"'), "worker concurrency hidden");
+		assert.ok(!html.includes('data-testid="compaction-row-reasoning"'), "reasoning token estimate hidden");
+		assert.ok(html.includes('data-testid="group-tools"'), "Tools sub-group stays visible");
+		assert.ok(html.includes('data-testid="group-context"'), "Context sub-group stays visible");
+		assert.ok(html.includes('data-testid="compaction-row-threshold"'), "compaction threshold stays visible");
+	});
+
 	it("Models exposes worker concurrency with exact help text and an unset default of 8", () => {
 		const render = (agent: { workerRequestConcurrency?: number } | undefined) => renderToStaticMarkup(
-			<AgentSection agent={agent} models={undefined} graph={undefined} compaction={undefined} onSectionChange={() => true} onModelsChange={() => {}} onCompactionChange={() => true} />,
+			<AgentSection restricted={false} agent={agent} models={undefined} graph={undefined} compaction={undefined} onSectionChange={() => true} onModelsChange={() => {}} onCompactionChange={() => true} />,
 		);
 		const html = render(undefined);
 		assert.ok(html.includes("Concurrent worker requests"));
@@ -184,7 +220,7 @@ describe("AgentSection (thin SSR)", () => {
 	});
 
 	it("renders the three model SLOT rows (slots-only, fix wave: unpicked reads —, no Default option)", () => {
-		const html = renderToStaticMarkup(<AgentSection agent={undefined} models={undefined} graph={undefined} onSectionChange={() => true} onModelsChange={() => {}} />);
+		const html = renderToStaticMarkup(<AgentSection restricted={false} agent={undefined} models={undefined} graph={undefined} onSectionChange={() => true} onModelsChange={() => {}} />);
 		for (const slot of ["strong", "cheap", "vision"]) {
 			assert.ok(html.includes(`data-testid="slot-row-${slot}"`), slot);
 			// The shared model-picker dropdown as the opened menu (owner,
@@ -282,6 +318,7 @@ describe("AgentSection (thin SSR)", () => {
 	it("an overridden SLOT shows its model in the trigger, tools carry the delta", () => {
 		const html = renderToStaticMarkup(
 			<AgentSection
+				restricted={false}
 				agent={{ tools: { demo: false } }}
 				models={{ strong: { model: { provider: "zai", id: "glm-4.7-flash" } } }}
 				onSectionChange={() => true}
@@ -296,7 +333,7 @@ describe("AgentSection (thin SSR)", () => {
 	});
 
 	it("prompts show the loading state under SSR (effects never fire)", () => {
-		const html = renderToStaticMarkup(<AgentSection agent={undefined} models={undefined} graph={undefined} onSectionChange={() => true} onModelsChange={() => {}} />);
+		const html = renderToStaticMarkup(<AgentSection restricted={false} agent={undefined} models={undefined} graph={undefined} onSectionChange={() => true} onModelsChange={() => {}} />);
 		assert.ok(html.includes("Loading prompt segments"));
 	});
 });

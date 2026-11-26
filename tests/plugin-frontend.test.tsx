@@ -622,7 +622,7 @@ describe("plugin frontend surface and native importer", () => {
 		};
 		const click = async (element: HTMLElement) => { await act(async () => { element.dispatchEvent(new dom.window.Event("click", { bubbles: true })); }); };
 		try {
-			await act(async () => { root.render(<React.StrictMode><AppRouterContext.Provider value={router}><PathnameContext.Provider value="/plugins/fixture/overview"><ServerEventsProvider connect={connect}><PluginsProvider><SettingsDialogBody initialSection="plugins" onClose={() => {}} /></PluginsProvider></ServerEventsProvider></PathnameContext.Provider></AppRouterContext.Provider></React.StrictMode>); });
+			await act(async () => { root.render(<React.StrictMode><AppRouterContext.Provider value={router}><PathnameContext.Provider value="/plugins/fixture/overview"><ServerEventsProvider connect={connect}><PluginsProvider><SettingsDialogBody restricted={false} initialSection="plugins" onClose={() => {}} /></PluginsProvider></ServerEventsProvider></PathnameContext.Provider></AppRouterContext.Provider></React.StrictMode>); });
 			assert.equal(activated, 1); assert.equal(activeSources, 1); assert.equal(settingsMounts, 0);
 			assert.ok(document.body.textContent?.includes("/fixture/writable/plugins"));
 			const ids = [...document.querySelectorAll('[data-testid]')].map(node => node.getAttribute("data-testid"));

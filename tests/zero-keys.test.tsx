@@ -12,7 +12,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { hasProviderKey, strongKeyless, ZeroKeysPill } from "../components/setup-cta.tsx";
 import type { ModelCatalogResponse } from "../src/core/index.ts";
-import { SetupKeysBody } from "../components/setup-dialog.tsx";
+import { SetupKeysBody, SetupMagistroBody } from "../components/setup-dialog.tsx";
 import { DICTATION_KEYLESS, DEEPGRAM_KEY_ID } from "../components/dictation.tsx";
 import type { AuthKeyStatus } from "../src/core/auth-keys.ts";
 import type { ProviderKeyInfo } from "../components/settings/keys-section.tsx";
@@ -49,13 +49,47 @@ describe("hasProviderKey — the zero-keys pill's truth", () => {
 });
 
 describe("ZeroKeysPill — the composer-hoisted notice", () => {
-	it("the pill takes the CTA's chrome with its own testid and copy", () => {
-		const html = renderToStaticMarkup(createElement(ZeroKeysPill, { onOpen: () => {} }));
-		assert.ok(html.includes('data-testid="setup-cta-keys"'));
-		assert.match(html, />Add a provider key<\/button>/);
-		assert.doesNotMatch(html, /chats start|—/);
-		// the models CTA's testid must not appear on the keys pill
-		assert.ok(!html.includes('data-testid="setup-cta"'));
+	it("shows Sign in to Magistro in standard mode and Add a provider key in unrestricted mode", () => {
+		const standardHtml = renderToStaticMarkup(createElement(ZeroKeysPill, { onOpen: () => {} }));
+		assert.ok(standardHtml.includes('data-testid="setup-cta-keys"'));
+		assert.match(standardHtml, />Sign in to Magistro<\/button>/);
+		assert.ok(!standardHtml.includes('data-testid="setup-cta"'));
+
+		const unrestrictedHtml = renderToStaticMarkup(createElement(ZeroKeysPill, { onOpen: () => {}, standardMode: false }));
+		assert.ok(unrestrictedHtml.includes('data-testid="setup-cta-keys"'));
+		assert.match(unrestrictedHtml, />Add a provider key<\/button>/);
+		assert.doesNotMatch(unrestrictedHtml, /chats start|—/);
+		assert.ok(!unrestrictedHtml.includes('data-testid="setup-cta"'));
+	});
+});
+
+describe("SetupMagistroBody — standard-user browser sign-in screen", () => {
+	const base = {
+		starting: false,
+		authUrl: null,
+		error: null,
+		onConnect: () => {},
+	};
+
+	it("renders browser sign-in CTA without manual token paste", () => {
+		const html = renderToStaticMarkup(createElement(SetupMagistroBody, base));
+		assert.ok(html.includes('data-testid="setup-stage-keys"'));
+		assert.ok(html.includes('data-testid="setup-magistro-connect"'));
+		assert.ok(html.includes("Continue in browser"));
+		assert.ok(!html.includes('data-testid="setup-magistro-manual-toggle"'));
+		assert.ok(!html.includes('data-testid="setup-key-input"'));
+		assert.ok(!html.includes('data-testid="setup-key-provider"'));
+	});
+
+	it("renders waiting link when browser auth is started", () => {
+		const html = renderToStaticMarkup(
+			createElement(SetupMagistroBody, {
+				...base,
+				authUrl: "http://localhost:8000/?connect=1&redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Fapi%2Fauth%2Fmagistro%2Fcallback&state=abc",
+			}),
+		);
+		assert.ok(html.includes('data-testid="setup-magistro-waiting"'));
+		assert.ok(html.includes('data-testid="setup-magistro-open-link"'));
 	});
 });
 

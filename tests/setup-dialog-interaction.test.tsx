@@ -66,7 +66,7 @@ async function mount({ keyed = false, catalogFails = false } = {}) {
 	root = createRoot(host);
 	function Harness() {
 		const [open, setOpen] = React.useState(true);
-		return <SetupDialog open={open} onClose={() => { closed++; setOpen(false); }} onDone={() => { completed++; }} />;
+		return <SetupDialog open={open} standardMode={false} onClose={() => { closed++; setOpen(false); }} onDone={() => { completed++; }} />;
 	}
 	await act(async () => { root!.render(<InteractionLayersProvider><Harness /></InteractionLayersProvider>); });
 }

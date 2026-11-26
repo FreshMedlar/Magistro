@@ -74,8 +74,6 @@ describe("seedMissingNodePositions (ledger stragglers)", () => {
 	it("known positions are byte-identical; missing nodes are seeded off the origin", () => {
 		const nodes = [{ id: "n1" }, { id: "n2" }, { id: "n_new" }, { id: "n_newer" }];
 		const out = seedMissingNodePositions(nodes, positions());
-		// the two known entries untouched (same objects, same values)
-		assert.equal(out.get("n1"), out.get("n1"));
 		assert.equal(out.get("n1")!.x, -100);
 		assert.equal(out.get("n2")!.y, 40);
 		// every node has a position now — no ?? 0 origin dump

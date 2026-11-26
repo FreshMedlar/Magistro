@@ -43,7 +43,7 @@ describe("plugin view host shell", () => {
 			ctx.placeAction({ id: "own-top", actionId: "own", location: "top-bar", views: ["overview"] });
 			ctx.placeAction({ id: "other-top", actionId: "other", location: "top-bar", views: ["elsewhere"] });
 			ctx.registerSettings(container => { settingsMounts++; container.textContent = "Fixture settings content"; });
-		} }, <SettingsDialogProvider><PluginViewScreen pluginId="fixture" viewId="overview" /></SettingsDialogProvider>);
+		} }, <SettingsDialogProvider restricted={false}><PluginViewScreen pluginId="fixture" viewId="overview" /></SettingsDialogProvider>);
 		try {
 			assert.equal(f.document.querySelector("h1")?.textContent, "Fixture overview");
 			assert.ok(f.document.body.textContent?.includes("View content"));

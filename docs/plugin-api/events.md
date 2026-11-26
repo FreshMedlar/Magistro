@@ -63,6 +63,7 @@ export interface ServerEvents {
         chatId: string;
     };
     "plugins-changed": Record<string, never>;
+    "magistro-connected": Record<string, never>;
     "plugin-message": {
         pluginId: string;
         topic: string;
@@ -91,6 +92,7 @@ export interface ServerEvents {
 - ["side-chats-changed"](#serverevents-side-chats-changed)
 - ["side-chats-changed".chatId](#serverevents-side-chats-changedchatid)
 - ["plugins-changed"](#serverevents-plugins-changed)
+- ["magistro-connected"](#serverevents-magistro-connected)
 - ["plugin-message"](#serverevents-plugin-message)
 - ["plugin-message".pluginId](#serverevents-plugin-messagepluginid)
 - ["plugin-message".topic](#serverevents-plugin-messagetopic)
@@ -245,6 +247,14 @@ Plugin availability/lifecycle changed; refetch installed packages.
 
 ```ts
 "plugins-changed": Record<string, never>;
+```
+
+### ServerEvents "magistro-connected"
+
+Magistro account connected via external browser callback.
+
+```ts
+"magistro-connected": Record<string, never>;
 ```
 
 ### ServerEvents "plugin-message"

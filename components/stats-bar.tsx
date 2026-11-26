@@ -48,6 +48,7 @@ export function StatsBar({
 	chatId,
 	leadingSlot,
 	onModelChange,
+	restricted,
 }: {
 	turns: TurnUsage[];
 	contextTokens?: number | null;
@@ -69,6 +70,7 @@ export function StatsBar({
 	 *  composer's teach | practice switch rides here — before the session
 	 *  data (which renders nothing pre-chat on that surface). */
 	leadingSlot?: ReactNode;
+	restricted?: boolean;
 }) {
 	const [open, setOpen] = useState(false);
 	const [selectedModel, setSelectedModel] = useState<string | undefined>();
@@ -207,7 +209,7 @@ export function StatsBar({
 			{/* The model + thinking control — one controller for the conversation
 			    agents (prober/teacher); the record's `turns` above still folds
 			    the ACTUAL models billed, regardless of what the picker says. */}
-			<ModelControl chatId={chatId} onModelChange={modelChanged} />
+			<ModelControl chatId={chatId} onModelChange={modelChanged} restricted={restricted} />
 		</div>
 	);
 }

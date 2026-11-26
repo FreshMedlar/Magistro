@@ -72,12 +72,17 @@ async function begin() { await click(byTest("chatgpt-login")); await click(byTes
 async function confirmDisconnect() { await click(byTest("chatgpt-disconnect")); await click(byTest("chatgpt-confirm-disconnect")); }
 afterEach(async () => { await act(async () => root?.unmount()); host?.remove(); root = undefined; host = undefined; delete window.lh; globalThis.fetch = originalFetch; });
 
-test("Providers is the first/default page; General closes the native group before Core/Community plugins", () => {
- const html = renderToStaticMarkup(<SettingsDialogBody onClose={() => {}} />);
- const ids = [...html.matchAll(/data-testid="settings-nav-([^"]+)"/g)].map((m) => m[1]);
- assert.deepEqual(ids, ["keys", "agent", "appearance", "graph", "keyboard", "general", "core-plugins", "plugins"]);
- assert.match(html, /settings-nav-keys[^>]*aria-current="true"/);
- assert.equal(parseHTML(html).document.querySelector('[data-testid="settings-nav-keys"]')?.textContent, "Providers");
+test("Providers is the first/default page in unrestricted mode; standard mode defaults to Agent without Providers or Community plugins", () => {
+ const unrestricted = renderToStaticMarkup(<SettingsDialogBody restricted={false} onClose={() => {}} />);
+ const unrestrictedIds = [...unrestricted.matchAll(/data-testid="settings-nav-([^"]+)"/g)].map((m) => m[1]);
+ assert.deepEqual(unrestrictedIds, ["keys", "agent", "appearance", "graph", "keyboard", "general", "core-plugins", "plugins"]);
+ assert.match(unrestricted, /settings-nav-keys[^>]*aria-current="true"/);
+ assert.equal(parseHTML(unrestricted).document.querySelector('[data-testid="settings-nav-keys"]')?.textContent, "Providers");
+
+ const restricted = renderToStaticMarkup(<SettingsDialogBody onClose={() => {}} />);
+ const restrictedIds = [...restricted.matchAll(/data-testid="settings-nav-([^"]+)"/g)].map((m) => m[1]);
+ assert.deepEqual(restrictedIds, ["agent", "appearance", "graph", "keyboard", "general", "core-plugins"]);
+ assert.match(restricted, /settings-nav-agent[^>]*aria-current="true"/);
 });
 
 test("Providers has five ordered sections including External CLI; unknown variables stay masked/read-only at the end of Model API keys", async () => {
@@ -565,6 +570,6 @@ test("browser-only sign-in is disabled; foreground toolbar has no plan badge or 
   if (input === "/api/settings") return Response.json({ settings: { models: { strong: { model: { provider: "chatgpt", id: "gpt-5" } } } } });
   throw new Error(`unexpected fixture request ${input}`);
  };
- fixture(connected(false)); await mount(<ModelControl />); assert.match(byTest("stats-model").textContent!, /gpt/i);
+ fixture(connected(false)); await mount(<ModelControl restricted={false} />); assert.match(byTest("stats-model").textContent!, /gpt/i);
  assert(!document.body.textContent?.includes("Using ChatGPT plan")); assert(!document.body.textContent?.includes("Enable background use"));
 });

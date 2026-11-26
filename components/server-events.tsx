@@ -26,6 +26,7 @@
  */
 import { createContext, useContext, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { SERVER_EVENT_TYPES, type ServerEventType, type ServerEvents } from "@/src/core";
+import { notifySettingsSaved } from "@/components/settings-signal";
 
 /** The minimal source surface the provider consumes — EventSource behind
  *  this in production, fakes in tests. */
@@ -122,6 +123,13 @@ export function useNotifyHub() { return useContext(EventsContext); }
 export function ServerEventsProvider({ children, connect }: { children: ReactNode; connect?: () => NotifySource }) {
 	const hub = useMemo(() => createNotifyHub(), []);
 	useEffect(() => wireSource((connect ?? openEventsChannel)(), hub), [hub, connect]);
+	useEffect(() => {
+		const off = hub.subscribe("magistro-connected", () => {
+			notifySettingsSaved("keys");
+			notifySettingsSaved("models");
+		});
+		return () => { off(); };
+	}, [hub]);
 	return <EventsContext.Provider value={hub}>{children}</EventsContext.Provider>;
 }
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ChatSettings, ModelCatalogEntry, ModelCatalogResponse, ModelsSettings, UserSettings } from "@/src/core";
+import { STANDARD_USER_SETTINGS, type ChatSettings, type ModelCatalogEntry, type ModelCatalogResponse, type ModelsSettings, type UserSettings } from "@/src/core";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { prettyModel } from "@/components/usage-format";
 import { ModelMenuList, ThinkingMenuList } from "@/components/settings/model-menu";
@@ -40,7 +40,15 @@ export function catalogLimits(catalog: Pick<ModelCatalogResponse, "models">): Ma
  * changing the new-session default. Unpicked reads "—" (the
  * no-factory-fallback language: the UI never presents a default model).
  */
-export function ModelControl({ chatId, onModelChange }: { chatId?: string; onModelChange?: (model: string | undefined) => void }) {
+export function ModelControl({
+	chatId,
+	onModelChange,
+	restricted = STANDARD_USER_SETTINGS,
+}: {
+	chatId?: string;
+	onModelChange?: (model: string | undefined) => void;
+	restricted?: boolean;
+}) {
 	const { catalog, refresh } = useModelCatalog();
 	const [models, setModels] = useState<ModelsSettings | undefined>();
 	// A successful read with no settings is a legacy session; undefined
@@ -222,6 +230,7 @@ export function ModelControl({ chatId, onModelChange }: { chatId?: string; onMod
 	// up the ladder (wrapping) — the owner's replacement for browser
 	// tab-focus. Both work from any focus, including mid-typing.
 	useEffect(() => {
+		if (restricted) return;
 		const onOpenPicker = () => {
 			if (!isInputShortcutScopeEligible(containerRef.current, interactions)) return;
 			setOpen("model");
@@ -230,7 +239,7 @@ export function ModelControl({ chatId, onModelChange }: { chatId?: string; onMod
 		};
 		window.addEventListener("lh:kbd-open-model-picker", onOpenPicker);
 		return () => window.removeEventListener("lh:kbd-open-model-picker", onOpenPicker);
-	}, [refresh, interactions]);
+	}, [refresh, interactions, restricted]);
 
 	useEffect(() => {
 		const onCycleThinking = () => {
@@ -272,17 +281,19 @@ export function ModelControl({ chatId, onModelChange }: { chatId?: string; onMod
 
 	return (
 		<div ref={containerRef} className="relative flex items-center gap-1.5" data-testid="model-control">
-			<Hint
-				label={effectiveId ? `${effectiveProvider ? `${effectiveProvider}:` : ""}${effectiveId}` : "Model selector"}
-				action="open-model-picker"
-				side="bottom"
-			>
-				<ModelPickerPill
-					data-testid="stats-model"
-					onClick={() => openMenu("model")}
-					aria-expanded={open === "model"}
-				>{effectiveId ? prettyModel(effectiveId) : "—"}</ModelPickerPill>
-			</Hint>
+			{!restricted && (
+				<Hint
+					label={effectiveId ? `${effectiveProvider ? `${effectiveProvider}:` : ""}${effectiveId}` : "Model selector"}
+					action="open-model-picker"
+					side="bottom"
+				>
+					<ModelPickerPill
+						data-testid="stats-model"
+						onClick={() => openMenu("model")}
+						aria-expanded={open === "model"}
+					>{effectiveId ? prettyModel(effectiveId) : "—"}</ModelPickerPill>
+				</Hint>
+			)}
 			<Hint
 				// "Thinking" + its real shortcut via the registry (owner interlude
 				// 2026-09-25): ⇧⇥ cycles the level, so "Thinking (⇧⇥)" —
@@ -304,7 +315,7 @@ export function ModelControl({ chatId, onModelChange }: { chatId?: string; onMod
 			{/* The shared dropdown body (extracted 2026-09-20): the agent
 			    settings' slot selects and the setup dialog use the exact same
 			    one. */}
-			{open === "model" && (
+			{!restricted && open === "model" && (
 				<MenuShell
 					anchorRef={containerRef}
 					testid="model-menu" onClose={() => { setOpen(null); return "closed"; }}

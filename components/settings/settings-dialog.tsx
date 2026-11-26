@@ -38,6 +38,7 @@ import { HostDialog } from "@/components/host-dialog";
 import { useInteractionLayers, type CloseOutcome } from "@/components/interaction-layers";
 import {
 	CURRENT_SETTINGS_VERSION,
+	STANDARD_USER_SETTINGS,
 	type AppearanceSettings,
 	type CompactionSettings,
 	type GraphSettings,
@@ -73,6 +74,15 @@ const SECTIONS = [
 ] as const;
 type SectionId = (typeof SECTIONS)[number]["id"] | "plugins" | "core-plugins" | `plugin:${string}`;
 
+function defaultSectionFor(restricted: boolean): SectionId {
+	return restricted ? "agent" : "keys";
+}
+
+function normalizeSectionFor(section: SectionId, restricted: boolean): SectionId {
+	if (restricted && (section === "keys" || section === "plugins")) return "agent";
+	return section;
+}
+
 /** `open(section?, row?)` — the optional ROW deep-links into the Keys
  *  section with that row unfolded (zero-keys wave: the dictation error's
  *  click lands on the Deepgram row). `row` is the KEY ID (the env-var
@@ -104,14 +114,16 @@ const WriteOrderContext = createContext<RefObject<SettingsWriteOrder> | null>(nu
  *  setup flow deep-links to Keys when no provider key exists yet). */
 export function SettingsDialogProvider({
 	children,
+	restricted = STANDARD_USER_SETTINGS,
 }: {
 	children: React.ReactNode;
+	restricted?: boolean;
 }) {
 	const interactions = useInteractionLayers();
 	const layerId = useId();
 	const writeOrder = useRef(newWriteOrder());
 	const [show, setShow] = useState(false);
-	const [landOn, setLandOn] = useState<SectionId>("keys");
+	const [landOn, setLandOn] = useState<SectionId>(() => defaultSectionFor(restricted));
 	const [landOnRow, setLandOnRow] = useState<string | null>(null);
 	const [navigationRequest, setNavigationRequest] = useState(0);
 	const open = useCallback((section?: string, row?: string) => {
@@ -120,10 +132,11 @@ export function SettingsDialogProvider({
 		if (interactions.getLayer(layerId) && interactions.popTo(layerId) !== "closed") return;
 		interactions.invalidateOpening();
 		setNavigationRequest(request => request + 1);
-		setLandOn(section ? section as SectionId : "keys");
-		setLandOnRow(row ?? null);
+		const target = section ? normalizeSectionFor(section as SectionId, restricted) : defaultSectionFor(restricted);
+		setLandOn(target);
+		setLandOnRow(target === "keys" ? (row ?? null) : null);
 		setShow(true);
-	}, [interactions, layerId]);
+	}, [interactions, layerId, restricted]);
 	const close = useCallback((): CloseOutcome => { setShow(false); return "closed"; }, []);
 	useEffect(() => window.lh?.onOpenSettings?.((section) => open(section)), [open]);
 	useEffect(() => {
@@ -138,7 +151,7 @@ export function SettingsDialogProvider({
 		<ChatGPTUIProvider><NativeSubscriptionUIProvider><WriteOrderContext.Provider value={writeOrder}><DialogContext.Provider value={{ open }}>
 			{children}
 			{show && (
-				<SettingsDialog onClose={close} initialSection={landOn} initialRow={landOnRow} navigationRequest={navigationRequest} layerId={layerId} />
+				<SettingsDialog onClose={close} initialSection={landOn} initialRow={landOnRow} navigationRequest={navigationRequest} layerId={layerId} restricted={restricted} />
 			)}
 		</DialogContext.Provider></WriteOrderContext.Provider></NativeSubscriptionUIProvider></ChatGPTUIProvider>
 	);
@@ -154,6 +167,7 @@ function SettingsDialog({
 	initialRow,
 	navigationRequest,
 	layerId,
+	restricted,
 }: {
 	onClose: () => CloseOutcome;
 	initialSection: SectionId;
@@ -161,11 +175,12 @@ function SettingsDialog({
 	layerId: string;
 	/** The keys-section row to unfold (see DialogContext above). */
 	initialRow: string | null;
+	restricted: boolean;
 }) {
 	// Keep the original visual frame and plain dim backdrop. The shared
 	// untransformed boundary also contains this modal's portaled menus.
 	return <SettingsDialogBody onClose={onClose} initialSection={initialSection}
-		initialRow={initialRow} navigationRequest={navigationRequest}
+		initialRow={initialRow} navigationRequest={navigationRequest} restricted={restricted}
 		renderFrame={frame => <HostDialog open layerId={layerId} ownerId={null}
 			onClose={onClose} frame={frame} aria-label="Settings"
 			backdropProps={{
@@ -178,12 +193,14 @@ function SettingsDialog({
  *  (portals render nothing under renderToStaticMarkup). */
 export function SettingsDialogBody({
 	onClose,
-	initialSection = "keys",
+	restricted = STANDARD_USER_SETTINGS,
+	initialSection = defaultSectionFor(restricted),
 	initialRow = null,
 	navigationRequest = 0,
 	renderFrame,
 }: {
 	onClose: () => void;
+	restricted?: boolean;
 	/** The runtime supplies the shared modal shell; standalone SSR retains the frame. */
 	renderFrame?: (frame: ReactElement<{ children: ReactNode }>) => ReactNode;
 	initialSection?: SectionId;
@@ -235,32 +252,37 @@ export function SettingsDialogBody({
 			window.removeEventListener(MENU_CLOSE_EVENT, onClose);
 		};
 	}, []);
-	const [active, setActive] = useState<SectionId>(initialSection);
+	const normalizedInitial = normalizeSectionFor(initialSection, restricted);
+	const [active, setActive] = useState<SectionId>(normalizedInitial);
 	// A deep-link fired while the dialog is ALREADY open (first exercised by
 	// the wave-6 embedding picker's "Add a provider key first…" link — the
 	// picker itself died with wave 7, the mechanism is general) changes
 	// initialSection under our feet — follow it, or the link silently does
 	// nothing.
 	useEffect(() => {
-		setActive(initialSection);
-	}, [initialSection, navigationRequest]);
+		setActive(normalizedInitial);
+	}, [normalizedInitial, navigationRequest]);
 
+	const visibleSections = restricted ? SECTIONS.filter(section => section.id !== "keys") : SECTIONS;
 	const enabledPlugins = snapshot.plugins.filter(plugin => plugin.info.enabled);
+	const visiblePlugins = restricted ? enabledPlugins.filter(plugin => plugin.info.origin === "core") : enabledPlugins;
 	const activePluginId = active.startsWith("plugin:") ? active.slice("plugin:".length) : null;
-	const activePlugin = enabledPlugins.find(plugin => plugin.info.id === activePluginId);
+	const activePlugin = visiblePlugins.find(plugin => plugin.info.id === activePluginId);
+	const matchingPlugin = activePluginId !== null ? snapshot.plugins.find(plugin => plugin.info.id === activePluginId) : undefined;
+	const blockedCommunityPlugin = restricted && matchingPlugin !== undefined && matchingPlugin.info.origin !== "core";
 	// Keep a deep link pending while discovery loads. Once discovery settles,
-	// disabled/uninstalled destinations return to management, never stale DOM.
-	const missingPlugin = activePluginId !== null && !activePlugin && !snapshot.loading;
-	const management = snapshot.plugins.find(plugin => plugin.info.id === activePluginId)?.info.origin === "core" ? "core-plugins" : "plugins";
+	// disabled/uninstalled/hidden destinations return to management, never stale DOM.
+	const missingPlugin = activePluginId !== null && !activePlugin && (!snapshot.loading || blockedCommunityPlugin);
+	const management = restricted || matchingPlugin?.info.origin === "core" ? "core-plugins" : "plugins";
 	useEffect(() => {
 		if (missingPlugin) setActive(management);
 	}, [missingPlugin, management]);
-	const selected = missingPlugin ? management : active;
+	const selected = normalizeSectionFor(missingPlugin ? management : active, restricted);
 	const navSections: { id: SectionId; label: string; icon?: LucideIcon }[] = [
-		...SECTIONS,
+		...visibleSections,
 		{ id: "core-plugins", label: "Core plugins", icon: PlugIcon },
-		{ id: "plugins", label: "Community plugins", icon: PuzzleIcon },
-		...enabledPlugins.map(plugin => ({ id: `plugin:${plugin.info.id}` as const, label: plugin.info.manifest?.name ?? plugin.info.id })),
+		...(!restricted ? [{ id: "plugins" as const, label: "Community plugins", icon: PuzzleIcon }] : []),
+		...visiblePlugins.map(plugin => ({ id: `plugin:${plugin.info.id}` as const, label: plugin.info.manifest?.name ?? plugin.info.id })),
 	];
 
 	// A save may finish after its original dialog closes. Publish its
@@ -431,7 +453,7 @@ export function SettingsDialogBody({
 				>
 					{navSections.map((s, index) => (
 						<div key={s.id} className="shrink-0">
-							{index === SECTIONS.length && <hr className="my-2 border-border" />}
+							{index === visibleSections.length && <hr className="my-2 border-border" />}
 							<button
 								type="button"
 								data-testid={`settings-nav-${s.id}`}
@@ -446,7 +468,7 @@ export function SettingsDialogBody({
 								{s.icon && <s.icon aria-hidden="true" focusable="false" className="size-3.5 shrink-0" />}
 								<span className="min-w-0">{s.label}</span>
 							</button>
-							{s.id === "plugins" && <hr className="my-2 border-border" />}
+							{(s.id === "plugins" || (restricted && s.id === "core-plugins" && visiblePlugins.length > 0)) && <hr className="my-2 border-border" />}
 						</div>
 					))}
 				</nav>
@@ -471,7 +493,7 @@ export function SettingsDialogBody({
 							{error}
 						</p>
 					)}
-					{selected === "plugins" || selected === "core-plugins" ? <PluginsSection origin={selected === "core-plugins" ? "core" : "community"} onOpenSettings={pluginId => setActive(`plugin:${pluginId}`)} />
+					{(selected === "plugins" && !restricted) || selected === "core-plugins" ? <PluginsSection origin={selected === "core-plugins" ? "core" : "community"} onOpenSettings={pluginId => setActive(`plugin:${pluginId}`)} />
 						: activePlugin ? <PluginSettingsPage key={`${activePlugin.info.id}/${activePlugin.info.revision}`} plugin={activePlugin} />
 							: activePluginId !== null ? <p role="status" className="px-6 py-5 text-xs text-muted-foreground">Loading plugins…</p>
 								: record === undefined ? (
@@ -484,7 +506,7 @@ export function SettingsDialogBody({
 						</p>
 					) : (
 						<div>
-							{active === "general" && (
+							{selected === "general" && (
 								<SettingsSection
 									title="General"
 									testid="section-general"
@@ -497,18 +519,19 @@ export function SettingsDialogBody({
 									/>
 								</SettingsSection>
 							)}
-							{active === "keys" && (
+							{selected === "keys" && !restricted && (
 								<SettingsSection title="Providers" testid="section-keys">
 									<KeysSection initialRow={initialRow ?? undefined} />
 								</SettingsSection>
 							)}
-							{active === "agent" && (
+							{selected === "agent" && (
 								<SettingsSection
 									title="Agent"
 									testid="section-agent"
 								>
 									<AgentSection
 										agent={record.agent}
+										restricted={restricted}
 										fileAccessError={fileAccessError}
 										models={record.models}
 										graph={record.graph}
@@ -526,7 +549,7 @@ export function SettingsDialogBody({
 									/>
 								</SettingsSection>
 							)}
-							{active === "appearance" && (
+							{selected === "appearance" && (
 								<SettingsSection
 									title="Appearance"
 									testid="section-appearance"
@@ -539,7 +562,7 @@ export function SettingsDialogBody({
 									/>
 								</SettingsSection>
 							)}
-							{active === "graph" && (
+							{selected === "graph" && (
 								<SettingsSection
 									title="Graph"
 									testid="section-graph"
@@ -552,7 +575,7 @@ export function SettingsDialogBody({
 									/>
 								</SettingsSection>
 							)}
-							{active === "keyboard" && (
+							{selected === "keyboard" && (
 								<SettingsSection
 									title="Keyboard"
 									hint="Stored on this device"

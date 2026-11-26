@@ -66,6 +66,7 @@ import {
 	COMPACTION_THRESHOLD_FLOOR,
 	MODEL_SLOTS,
 	SEARCH_ENGINES,
+	STANDARD_USER_SETTINGS,
 	resolveSettings,
 	isFileAccessFolder,
 	type AgentSettings,
@@ -361,47 +362,220 @@ function MenuTrigger({
  * viewport cap and auto-flip. data-lh-menu rides the shell — the
  * outside-click contract's exemption mark. */
 
-export function AgentSection({
+type AgentOpenMenu = { target: ModelSlotName | "search"; kind: "model" | "thinking" | "engine" | "cache" } | null;
+
+function AgentModelsGroup({
 	agent,
-	fileAccessError,
 	models,
-	graph,
-	compaction,
-	onSectionChange,
-	onDeletePromptOverride,
+	defaultWorkerConcurrency,
+	openMenu,
+	setOpenMenu,
+	menuAnchorRef,
 	onModelsChange,
-	onCompactionChange,
+	onSectionChange,
 }: {
 	agent: AgentSettings | undefined;
-	fileAccessError?: string | null;
-	/** The `models` section (slot pins — engine-level, PUT /api/settings/models). */
 	models: ModelsSettings | undefined;
-	/** The `graph` section — READ ONLY here: the graphTools row composes its
-	 *  master switch (graph.enabled off dims + disables the row; the
-	 *  effective gate is server-side, per-turn fresh). */
-	graph: GraphSettings | undefined;
-	/** The `compaction` section — its own PUT (the threshold is engine
-	 *  behavior, not an agent-section key; owner round 14, Agent tab). */
-	compaction: CompactionSettings | undefined;
-	/** Writes the composed WHOLE agent section (replace-PUT discipline). */
-	onSectionChange: (next: AgentSettings, confirms?: (stored: AgentSettings) => boolean) => boolean | Promise<boolean>;
-	/** Order the override DELETE against Settings' full-record acknowledgements. */
-	onDeletePromptOverride?: (path: string, remove: () => Promise<boolean>) => Promise<PromptDeleteOutcome>;
-	/** Writes the composed models section (slots — replace-PUT discipline). */
+	defaultWorkerConcurrency: number;
+	openMenu: AgentOpenMenu;
+	setOpenMenu: (next: AgentOpenMenu) => void;
+	menuAnchorRef: React.RefObject<HTMLSpanElement | null>;
 	onModelsChange: (next: ModelsSettings) => void;
-	/** Writes the whole compaction section (replace-PUT discipline). */
-	onCompactionChange: (next: CompactionSettings) => boolean | Promise<boolean>;
+	onSectionChange: (next: AgentSettings, confirms?: (stored: AgentSettings) => boolean) => boolean | Promise<boolean>;
 }) {
 	const { catalog: body, failed: catalogFailed, refresh: refreshCatalog } = useModelCatalog();
 	const catalog = body?.models;
 	const slots = body?.slots;
-	/** The live search state (/api/search) — the row's reason line. */
-	const [folderInput, setFolderInput] = useState("");
-	const [folderError, setFolderError] = useState<string | null>(null);
-	const [search, setSearch] = useState<{ available: boolean; engine: string | null; reason: string } | null>(null);
-	/** Which search engines have a key (/api/keys) — the no-keys-anywhere
-	 *  state grays the row; per-engine marks ride the menu rows. */
-	const [engineKeys, setEngineKeys] = useState<Partial<Record<SearchEngineId, boolean>>>({});
+	const [advancedModels, setAdvancedModels] = useState(false);
+	const [workerConcurrencyError, setWorkerConcurrencyError] = useState<string | null>(null);
+
+	return (
+		<SettingsGroup label="Models" testid="group-models">
+			<button
+				type="button"
+				data-testid="models-advanced"
+				aria-expanded={advancedModels}
+				onClick={() => { setAdvancedModels(!advancedModels); setOpenMenu(null); }}
+				className="mb-1 self-start text-xs text-muted-foreground hover:text-foreground"
+			>{advancedModels ? "Hide advanced settings" : "Show advanced settings"}</button>
+			{catalogFailed && <p role="alert" className="text-xs text-error">Model catalog could not be loaded. Check the connection and retry. <button type="button" className="underline" onClick={refreshCatalog}>Retry</button></p>}
+			{MODEL_SLOTS.map((slot) => {
+				const override = models?.[slot];
+				const modelId = override?.model?.id ?? "";
+				const provider = override?.model?.provider ?? "";
+				const thinking = override?.thinkingLevel ?? "";
+				// The tier's resolved pin is machinery only now (owner, fix
+				// wave): the UI never names the factory fallback — the hint
+				// carries the roster, the triggers read "—" when unpicked — but
+				// the pin still governs the thinking level LIST when no override
+				// names a model to read levels from.
+				const pin = slots?.[slot];
+				// The model whose levels govern the thinking list: the
+				// override, else the resolved pin (when it's in the federated
+				// catalog); the standard ladder as the last fallback.
+				const coord = override?.model ?? pin?.model;
+				const chosen = coord ? catalog?.find((m) => m.id === coord.id && m.provider === coord.provider) : undefined;
+				const levels = chosen ? chosen.supportedLevels : THINKING_LEVELS;
+				const thisMenuOpen = openMenu?.target === slot ? openMenu.kind : null;
+				return (
+					<SettingsRow
+						key={slot}
+						label={SLOT_META[slot].label}
+						hint={SLOT_META[slot].roster}
+						testid={`slot-row-${slot}`}
+					>
+						{/* The anchor for the outside-click contract is the
+						    span holding BOTH triggers of the open menu. */}
+						<span
+							ref={thisMenuOpen ? menuAnchorRef : undefined}
+							className={`relative flex items-center gap-2 ${advancedModels ? "shrink-0" : ""}`}
+						>
+							{slot !== "strong" && <><ChatGPTBackgroundAccess provider={coord?.provider} /><NativeSubscriptionBackgroundAccess provider={coord?.provider} /></>}
+							<MenuTrigger
+								value={modelId ? prettyModel(modelId) : ""}
+								hint={modelId ? `${provider}:${modelId}` : undefined}
+								emptyLabel="—"
+								ariaLabel={`${SLOT_META[slot].label} model`}
+								testid={`slot-model-${slot}`}
+								open={thisMenuOpen === "model"}
+								onClick={() => setOpenMenu(thisMenuOpen === "model" ? null : { target: slot, kind: "model" })}
+								widthClass="min-w-20"
+							/>
+							<MenuTrigger
+								// Legacy display (chunk 2 item 4): no stored level + a known
+								// model → the RESOLVED level (the ordering's first supported —
+								// what the engine build runs). Display-only until a pick writes.
+								value={thinking || (chosen ? defaultOrderLevel(levels) : "")}
+								emptyLabel="—"
+								ariaLabel={`${SLOT_META[slot].label} thinking`}
+								testid={`slot-thinking-${slot}`}
+								open={thisMenuOpen === "thinking"}
+								onClick={() => setOpenMenu(thisMenuOpen === "thinking" ? null : { target: slot, kind: "thinking" })}
+								widthClass="w-20"
+							/>
+							{advancedModels && <MenuTrigger
+								value={cacheRetentionLabel(override?.cacheRetention)}
+								emptyLabel="Cache: default"
+								ariaLabel={`${SLOT_META[slot].label} cache retention`}
+								testid={`slot-cache-${slot}`}
+								open={thisMenuOpen === "cache"}
+								disabled={!override?.model}
+								onClick={() => setOpenMenu(thisMenuOpen === "cache" ? null : { target: slot, kind: "cache" })}
+								widthClass="w-40"
+							/>}
+							{advancedModels && thisMenuOpen === "cache" && <MenuShell
+								preferredSide="down"
+								anchorTestid={`slot-cache-${slot}`}
+								testid={`slot-cache-menu-${slot}`}
+								onClose={() => { setOpenMenu(null); return "closed"; }}
+								menuClass="flex w-80 flex-col gap-0.5 rounded-xl border border-border bg-card p-2 text-xs shadow-xl"
+							>
+								<CacheRetentionMenu value={override?.cacheRetention} onPick={(value) => {
+									onModelsChange(composeSlotCacheRetention(models, slot, value));
+									setOpenMenu(null);
+								}} />
+							</MenuShell>}
+							{thisMenuOpen === "model" && (
+								<MenuShell
+									preferredSide="down"
+									anchorTestid={`slot-model-${slot}`}
+									testid={`slot-model-menu-${slot}`}
+									onClose={() => { setOpenMenu(null); return "closed"; }}
+									menuClass="flex w-[22rem] flex-col rounded-xl border border-border bg-card p-2 text-xs shadow-xl"
+								>
+									<ModelMenuList
+										models={catalog ?? undefined}
+										effectiveId={modelId}
+										effectiveProvider={provider}
+										vision={slot === "vision"}
+										onPick={(entry) => {
+											// Auto-populate (chunk 2, owner: "populate everywhere"): the
+											// fresh pick writes a level — the stored one rides as-is
+											// (the write clamps server-side), else the ordering's level.
+											const next = populateLevel(thinking || undefined, entry.supportedLevels);
+											onModelsChange(composeSlotModel(models, slot, entry.provider, entry.id, next));
+											setOpenMenu(null);
+										}}
+										footer={
+											catalog && catalog.length === 0
+												? "No models — add a provider key in Keys"
+												: "Runs every agent of this tier"
+										}
+									/>
+								</MenuShell>
+							)}
+							{thisMenuOpen === "thinking" && (
+								<MenuShell
+									preferredSide="down"
+									anchorTestid={`slot-thinking-${slot}`}
+									testid={`slot-thinking-menu-${slot}`}
+									onClose={() => { setOpenMenu(null); return "closed"; }}
+									menuClass="flex w-44 flex-col gap-0.5 rounded-xl border border-border bg-card p-2 text-xs shadow-xl"
+								>
+									<ThinkingMenuList
+										levels={levels.map(String)}
+										// The ✓ sits on the RESOLVED level for legacy unset records —
+										// the same one the trigger shows.
+										effectiveLevel={thinking || (chosen ? defaultOrderLevel(levels) : undefined)}
+										onPick={(level) => {
+											onModelsChange(composeSlotModel(models, slot, provider, modelId, level));
+											setOpenMenu(null);
+										}}
+									/>
+								</MenuShell>
+							)}
+						</span>
+					</SettingsRow>
+				);
+			})}
+			<ModelCatalogRefreshRow />
+			<SettingsRow
+				label="Concurrent worker requests"
+				hint="Maximum simultaneous background-worker model requests. Direct conversations are not limited."
+				testid="worker-request-concurrency-row"
+			>
+				<div
+					className="flex flex-col items-end gap-1"
+					onChangeCapture={() => setWorkerConcurrencyError(null)}
+					onBlurCapture={(event) => {
+						// Browsers expose incomplete numeric input (e.g. "1e")
+						// as an empty value. It is INVALID, not a blank reset.
+						if (event.target instanceof HTMLInputElement && event.target.validity.badInput) {
+							event.stopPropagation();
+							setWorkerConcurrencyError("Enter a positive, safely representable whole number.");
+						}
+					}}
+				>
+					<CommitInput
+						type="number"
+						min={1}
+						step={1}
+						value={String(agent?.workerRequestConcurrency ?? "")}
+						placeholder={String(defaultWorkerConcurrency)}
+						ariaLabel="Concurrent worker requests"
+						testid="input-worker-request-concurrency"
+						onCommit={(value) => {
+							const next = composeWorkerRequestConcurrency(agent, value);
+							setWorkerConcurrencyError(next.ok ? null : next.error);
+							return next.ok ? onSectionChange(next.settings) : false;
+						}}
+					/>
+					{workerConcurrencyError && <p role="alert" className="text-xs text-error">{workerConcurrencyError}</p>}
+				</div>
+			</SettingsRow>
+		</SettingsGroup>
+	);
+}
+
+function AgentPromptsGroup({
+	agent,
+	onSectionChange,
+	onDeletePromptOverride,
+}: {
+	agent: AgentSettings | undefined;
+	onSectionChange: (next: AgentSettings, confirms?: (stored: AgentSettings) => boolean) => boolean | Promise<boolean>;
+	onDeletePromptOverride?: (path: string, remove: () => Promise<boolean>) => Promise<PromptDeleteOutcome>;
+}) {
 	const [prompts, setPrompts] = useState<PromptView | null>(null);
 	const [promptListStatus, setPromptListStatus] = useState<"loading" | "ready" | "failed">("loading");
 	const promptRead = useRef<AbortController | null>(null);
@@ -411,19 +585,6 @@ export function AgentSection({
 	const [switchPending, setSwitchPending] = useState(false);
 	const switchingPrompt = useRef(false);
 	const [switchError, setSwitchError] = useState<string | null>(null);
-	/** One open dropdown for the whole section: which slot (or the search
-	 *  row), which kind. */
-	const [openMenu, setOpenMenu] = useState<{ target: ModelSlotName | "search"; kind: "model" | "thinking" | "engine" | "cache" } | null>(null);
-	const [advancedModels, setAdvancedModels] = useState(false);
-	const [workerConcurrencyError, setWorkerConcurrencyError] = useState<string | null>(null);
-	const menuAnchorRef = useRef<HTMLSpanElement>(null);
-	const interactions = useInteractionLayers();
-
-	const refreshSearch = () =>
-		fetch("/api/search")
-			.then((r) => r.json())
-			.then((body: { available: boolean; engine: string | null; reason: string }) => setSearch(body))
-			.catch(() => setSearch(null));
 
 	/** Re-read the prompt-segment view — the signal seam for the
 	 *  2026-09-26 state-echo fix: the view's `enabled` flags DERIVE from
@@ -449,8 +610,6 @@ export function AgentSection({
 		}
 	}, []);
 
-	// The shared catalog seeds the first frame and refreshes per mount and
-	// keys/models signal. Settings props still own saved selections/levels.
 	useSettingsSaved((section) => {
 		// THE state-echo root cause: the prompt switches write through the
 		// agent section, but this view (the toggles' truth) never re-read —
@@ -461,48 +620,8 @@ export function AgentSection({
 
 	useEffect(() => {
 		void readPrompts();
-		fetch("/api/keys")
-			.then((r) => r.json())
-			.then((body: { keys: { id: string; present: boolean }[] }) => {
-				const present: Partial<Record<SearchEngineId, boolean>> = {};
-				for (const { id, envVar } of SEARCH_ENGINES) {
-					present[id] = body.keys.some((k) => k.id === envVar && k.present);
-				}
-				setEngineKeys(present);
-			})
-			.catch(() => {});
 		return () => promptRead.current?.abort();
 	}, [readPrompts]);
-
-	// The reason line re-reads /api/search AFTER an engine write lands —
-	// the write updates the `agent` prop (the dialog's record mirror), so
-	// keying on the pin avoids the race where the fetch beat the PUT and
-	// the hint contradicted the trigger it sits under.
-	useEffect(() => {
-		refreshSearch();
-	}, [agent?.search?.engine]);
-
-	// The dropdown contract (the chat model selector's, mirrored): any
-	// click outside the open menu — or an Esc — closes it. Esc is CLAIMED
-	// with stopPropagation so the settings dialog behind does NOT also
-	// close. A pointerdown on the backdrop is left for the dialog (its own
-	// click closes everything); a click inside the dialog just closes us.
-	useEffect(() => {
-		if (openMenu === null) return;
-		const onPointerDown = (e: PointerEvent) => {
-			const testid = openMenu.target === "search" ? "search-engine-menu" : `slot-${openMenu.kind}-menu-${openMenu.target}`;
-			if (!interactions.isElementEligible(document.querySelector<HTMLElement>(`[data-testid="${testid}"]`))) return;
-			const target = e.target as Node;
-			if (menuAnchorRef.current?.contains(target)) return;
-			if (target instanceof Element && target.closest("[data-lh-menu]")) return;
-			if (target instanceof Element && target.closest('[role="dialog"]')) {
-				setOpenMenu(null);
-			}
-			// else: outside the dialog — the dialog's own close handles it.
-		};
-		document.addEventListener("pointerdown", onPointerDown);
-		return () => document.removeEventListener("pointerdown", onPointerDown);
-	}, [openMenu, interactions]);
 
 	async function switchSegment(path: string, on: boolean) {
 		if (switchingPrompt.current || promptListStatus !== "ready") return;
@@ -566,6 +685,141 @@ export function AgentSection({
 		return outcome;
 	}
 
+	return (
+		<>
+			<SettingsGroup label="System prompts" testid="group-prompts">
+				<p className="text-xs text-muted-foreground">Use the switch to choose between the default and your saved override.</p>
+				{promptListStatus !== "ready" && <div className="flex items-center gap-2">
+					{promptListStatus === "failed" ? <p role="alert" className="text-xs text-error">Couldn't load prompt segments.</p> :
+						<p role="status" className="text-xs text-muted-foreground">{prompts ? "Refreshing prompt segments…" : "Loading prompt segments…"}</p>}
+					<Button type="button" size="xs" variant="outline" onClick={() => void readPrompts()}>Retry</Button>
+				</div>}
+				{prompts && (
+					<div className="flex flex-col gap-4">
+						{/* Teacher, Prober, Practice, Shared — shared chunks once,
+						    each agent's own section in prompt-assembly order. */}
+						{sectionedSegments(prompts).map((section) => (
+							<div key={section.id} data-testid={`prompt-section-${section.id}`}>
+								<p className="mb-1 text-xs uppercase tracking-widest text-muted-foreground/70">
+									{section.label}
+								</p>
+								{section.segments.map((info) => <PromptSegmentRow key={info.path}
+									path={info.path} usageHint={info.usageHint} hasOverride={info.overrideText !== null} enabled={info.enabled}
+									busy={promptListStatus !== "ready"} switching={switchPending} error={switchError === info.path ? "Couldn't switch prompt versions." : undefined}
+									onView={row => setOpenSegment({ info, mode: "view", row })}
+									onEdit={row => setOpenSegment({ info, mode: "edit", row })}
+									onToggle={(on) => void switchSegment(info.path, on)}
+								/>)}
+							</div>
+						))}
+					</div>
+				)}
+			</SettingsGroup>
+			{openSegment && <PromptSegmentDialog
+				name={promptSegmentName(openSegment.info.path)} returnFocusFallback={openSegment.row} source={openSegment.info.sourceText} override={openSegment.info.overrideText} mode={openSegment.mode}
+				onSave={(text, writeText) => saveSegment(openSegment.info.path, text, writeText)}
+				onDelete={() => deleteSegment(openSegment.info.path)}
+				onClose={() => setOpenSegment(null)}
+			/>}
+		</>
+	);
+}
+
+export function AgentSection({
+	agent,
+	restricted = STANDARD_USER_SETTINGS,
+	fileAccessError,
+	models,
+	graph,
+	compaction,
+	onSectionChange,
+	onDeletePromptOverride,
+	onModelsChange,
+	onCompactionChange,
+}: {
+	agent: AgentSettings | undefined;
+	restricted?: boolean;
+	fileAccessError?: string | null;
+	/** The `models` section (slot pins — engine-level, PUT /api/settings/models). */
+	models: ModelsSettings | undefined;
+	/** The `graph` section — READ ONLY here: the graphTools row composes its
+	 *  master switch (graph.enabled off dims + disables the row; the
+	 *  effective gate is server-side, per-turn fresh). */
+	graph: GraphSettings | undefined;
+	/** The `compaction` section — its own PUT (the threshold is engine
+	 *  behavior, not an agent-section key; owner round 14, Agent tab). */
+	compaction: CompactionSettings | undefined;
+	/** Writes the composed WHOLE agent section (replace-PUT discipline). */
+	onSectionChange: (next: AgentSettings, confirms?: (stored: AgentSettings) => boolean) => boolean | Promise<boolean>;
+	/** Order the override DELETE against Settings' full-record acknowledgements. */
+	onDeletePromptOverride?: (path: string, remove: () => Promise<boolean>) => Promise<PromptDeleteOutcome>;
+	/** Writes the composed models section (slots — replace-PUT discipline). */
+	onModelsChange: (next: ModelsSettings) => void;
+	/** Writes the whole compaction section (replace-PUT discipline). */
+	onCompactionChange: (next: CompactionSettings) => boolean | Promise<boolean>;
+}) {
+	/** The live search state (/api/search) — the row's reason line. */
+	const [folderInput, setFolderInput] = useState("");
+	const [folderError, setFolderError] = useState<string | null>(null);
+	const [search, setSearch] = useState<{ available: boolean; engine: string | null; reason: string } | null>(null);
+	/** Which search engines have a key (/api/keys) — the no-keys-anywhere
+	 *  state grays the row; per-engine marks ride the menu rows. */
+	const [engineKeys, setEngineKeys] = useState<Partial<Record<SearchEngineId, boolean>>>({});
+	/** One open dropdown for the whole section: which slot (or the search
+	 *  row), which kind. */
+	const [openMenu, setOpenMenu] = useState<AgentOpenMenu>(null);
+	const menuAnchorRef = useRef<HTMLSpanElement>(null);
+	const interactions = useInteractionLayers();
+
+	const refreshSearch = () =>
+		fetch("/api/search")
+			.then((r) => r.json())
+			.then((body: { available: boolean; engine: string | null; reason: string }) => setSearch(body))
+			.catch(() => setSearch(null));
+
+	useEffect(() => {
+		fetch("/api/keys")
+			.then((r) => r.json())
+			.then((body: { keys: { id: string; present: boolean }[] }) => {
+				const present: Partial<Record<SearchEngineId, boolean>> = {};
+				for (const { id, envVar } of SEARCH_ENGINES) {
+					present[id] = body.keys.some((k) => k.id === envVar && k.present);
+				}
+				setEngineKeys(present);
+			})
+			.catch(() => {});
+	}, []);
+
+	// The reason line re-reads /api/search AFTER an engine write lands —
+	// the write updates the `agent` prop (the dialog's record mirror), so
+	// keying on the pin avoids the race where the fetch beat the PUT and
+	// the hint contradicted the trigger it sits under.
+	useEffect(() => {
+		refreshSearch();
+	}, [agent?.search?.engine]);
+
+	// The dropdown contract (the chat model selector's, mirrored): any
+	// click outside the open menu — or an Esc — closes it. Esc is CLAIMED
+	// with stopPropagation so the settings dialog behind does NOT also
+	// close. A pointerdown on the backdrop is left for the dialog (its own
+	// click closes everything); a click inside the dialog just closes us.
+	useEffect(() => {
+		if (openMenu === null) return;
+		const onPointerDown = (e: PointerEvent) => {
+			const testid = openMenu.target === "search" ? "search-engine-menu" : `slot-${openMenu.kind}-menu-${openMenu.target}`;
+			if (!interactions.isElementEligible(document.querySelector<HTMLElement>(`[data-testid="${testid}"]`))) return;
+			const target = e.target as Node;
+			if (menuAnchorRef.current?.contains(target)) return;
+			if (target instanceof Element && target.closest("[data-lh-menu]")) return;
+			if (target instanceof Element && target.closest('[role="dialog"]')) {
+				setOpenMenu(null);
+			}
+			// else: outside the dialog — the dialog's own close handles it.
+		};
+		document.addEventListener("pointerdown", onPointerDown);
+		return () => document.removeEventListener("pointerdown", onPointerDown);
+	}, [openMenu, interactions]);
+
 		/** The search-engine menu row — label + the quiet live-key mark. */
 	const engineOption = (
 		id: SearchEngineId | "auto",
@@ -601,180 +855,18 @@ export function AgentSection({
 
 	return (
 		<>
-			<SettingsGroup label="Models" testid="group-models">
-				<button
-					type="button"
-					data-testid="models-advanced"
-					aria-expanded={advancedModels}
-					onClick={() => { setAdvancedModels(!advancedModels); setOpenMenu(null); }}
-					className="mb-1 self-start text-xs text-muted-foreground hover:text-foreground"
-				>{advancedModels ? "Hide advanced settings" : "Show advanced settings"}</button>
-				{catalogFailed && <p role="alert" className="text-xs text-error">Model catalog could not be loaded. Check the connection and retry. <button type="button" className="underline" onClick={refreshCatalog}>Retry</button></p>}
-				{MODEL_SLOTS.map((slot) => {
-					const override = models?.[slot];
-					const modelId = override?.model?.id ?? "";
-					const provider = override?.model?.provider ?? "";
-					const thinking = override?.thinkingLevel ?? "";
-					// The tier's resolved pin is machinery only now (owner, fix
-					// wave): the UI never names the factory fallback — the hint
-					// carries the roster, the triggers read "—" when unpicked — but
-					// the pin still governs the thinking level LIST when no override
-					// names a model to read levels from.
-					const pin = slots?.[slot];
-					// The model whose levels govern the thinking list: the
-					// override, else the resolved pin (when it's in the federated
-					// catalog); the standard ladder as the last fallback.
-					const coord = override?.model ?? pin?.model;
-					const chosen = coord ? catalog?.find((m) => m.id === coord.id && m.provider === coord.provider) : undefined;
-					const levels = chosen ? chosen.supportedLevels : THINKING_LEVELS;
-					const thisMenuOpen = openMenu?.target === slot ? openMenu.kind : null;
-					return (
-						<SettingsRow
-							key={slot}
-							label={SLOT_META[slot].label}
-							hint={SLOT_META[slot].roster}
-							testid={`slot-row-${slot}`}
-						>
-							{/* The anchor for the outside-click contract is the
-							    span holding BOTH triggers of the open menu. */}
-							<span
-								ref={thisMenuOpen ? menuAnchorRef : undefined}
-								className={`relative flex items-center gap-2 ${advancedModels ? "shrink-0" : ""}`}
-							>
-								{slot !== "strong" && <><ChatGPTBackgroundAccess provider={coord?.provider} /><NativeSubscriptionBackgroundAccess provider={coord?.provider} /></>}
-								<MenuTrigger
-									value={modelId ? prettyModel(modelId) : ""}
-									hint={modelId ? `${provider}:${modelId}` : undefined}
-									emptyLabel="—"
-									ariaLabel={`${SLOT_META[slot].label} model`}
-									testid={`slot-model-${slot}`}
-									open={thisMenuOpen === "model"}
-									onClick={() => setOpenMenu(thisMenuOpen === "model" ? null : { target: slot, kind: "model" })}
-									widthClass="min-w-20"
-								/>
-								<MenuTrigger
-									// Legacy display (chunk 2 item 4): no stored level + a known
-									// model → the RESOLVED level (the ordering's first supported —
-									// what the engine build runs). Display-only until a pick writes.
-									value={thinking || (chosen ? defaultOrderLevel(levels) : "")}
-									emptyLabel="—"
-									ariaLabel={`${SLOT_META[slot].label} thinking`}
-									testid={`slot-thinking-${slot}`}
-									open={thisMenuOpen === "thinking"}
-									onClick={() => setOpenMenu(thisMenuOpen === "thinking" ? null : { target: slot, kind: "thinking" })}
-									widthClass="w-20"
-								/>
-								{advancedModels && <MenuTrigger
-									value={cacheRetentionLabel(override?.cacheRetention)}
-									emptyLabel="Cache: default"
-									ariaLabel={`${SLOT_META[slot].label} cache retention`}
-									testid={`slot-cache-${slot}`}
-									open={thisMenuOpen === "cache"}
-									disabled={!override?.model}
-									onClick={() => setOpenMenu(thisMenuOpen === "cache" ? null : { target: slot, kind: "cache" })}
-									widthClass="w-40"
-								/>}
-								{advancedModels && thisMenuOpen === "cache" && <MenuShell
-									preferredSide="down"
-									anchorTestid={`slot-cache-${slot}`}
-									testid={`slot-cache-menu-${slot}`}
-									onClose={() => { setOpenMenu(null); return "closed"; }}
-									menuClass="flex w-80 flex-col gap-0.5 rounded-xl border border-border bg-card p-2 text-xs shadow-xl"
-								>
-									<CacheRetentionMenu value={override?.cacheRetention} onPick={(value) => {
-										onModelsChange(composeSlotCacheRetention(models, slot, value));
-										setOpenMenu(null);
-									}} />
-								</MenuShell>}
-								{thisMenuOpen === "model" && (
-									<MenuShell
-										preferredSide="down"
-											anchorTestid={`slot-model-${slot}`}
-										testid={`slot-model-menu-${slot}`}
-										onClose={() => { setOpenMenu(null); return "closed"; }}
-										menuClass="flex w-[22rem] flex-col rounded-xl border border-border bg-card p-2 text-xs shadow-xl"
-									>
-										<ModelMenuList
-											models={catalog ?? undefined}
-											effectiveId={modelId}
-											effectiveProvider={provider}
-											vision={slot === "vision"}
-											onPick={(entry) => {
-												// Auto-populate (chunk 2, owner: "populate everywhere"): the
-												// fresh pick writes a level — the stored one rides as-is
-												// (the write clamps server-side), else the ordering's level.
-												const next = populateLevel(thinking || undefined, entry.supportedLevels);
-												onModelsChange(composeSlotModel(models, slot, entry.provider, entry.id, next));
-												setOpenMenu(null);
-											}}
-											footer={
-												catalog && catalog.length === 0
-													? "No models — add a provider key in Keys"
-													: "Runs every agent of this tier"
-											}
-										/>
-									</MenuShell>
-								)}
-								{thisMenuOpen === "thinking" && (
-									<MenuShell
-										preferredSide="down"
-											anchorTestid={`slot-thinking-${slot}`}
-										testid={`slot-thinking-menu-${slot}`}
-										onClose={() => { setOpenMenu(null); return "closed"; }}
-										menuClass="flex w-44 flex-col gap-0.5 rounded-xl border border-border bg-card p-2 text-xs shadow-xl"
-									>
-										<ThinkingMenuList
-											levels={levels.map(String)}
-											// The ✓ sits on the RESOLVED level for legacy unset records —
-											// the same one the trigger shows.
-											effectiveLevel={thinking || (chosen ? defaultOrderLevel(levels) : undefined)}
-											onPick={(level) => {
-												onModelsChange(composeSlotModel(models, slot, provider, modelId, level));
-												setOpenMenu(null);
-											}}
-										/>
-									</MenuShell>
-								)}
-							</span>
-						</SettingsRow>
-					);
-				})}
-				<ModelCatalogRefreshRow />
-				<SettingsRow
-					label="Concurrent worker requests"
-					hint="Maximum simultaneous background-worker model requests. Direct conversations are not limited."
-					testid="worker-request-concurrency-row"
-				>
-					<div
-						className="flex flex-col items-end gap-1"
-						onChangeCapture={() => setWorkerConcurrencyError(null)}
-						onBlurCapture={(event) => {
-							// Browsers expose incomplete numeric input (e.g. "1e")
-							// as an empty value. It is INVALID, not a blank reset.
-							if (event.target instanceof HTMLInputElement && event.target.validity.badInput) {
-								event.stopPropagation();
-								setWorkerConcurrencyError("Enter a positive, safely representable whole number.");
-							}
-						}}
-					>
-						<CommitInput
-							type="number"
-							min={1}
-							step={1}
-							value={String(agent?.workerRequestConcurrency ?? "")}
-							placeholder={String(resolvedAgent.workerRequestConcurrency)}
-							ariaLabel="Concurrent worker requests"
-							testid="input-worker-request-concurrency"
-							onCommit={(value) => {
-								const next = composeWorkerRequestConcurrency(agent, value);
-								setWorkerConcurrencyError(next.ok ? null : next.error);
-								return next.ok ? onSectionChange(next.settings) : false;
-							}}
-						/>
-						{workerConcurrencyError && <p role="alert" className="text-xs text-error">{workerConcurrencyError}</p>}
-					</div>
-				</SettingsRow>
-			</SettingsGroup>
+			{!restricted && (
+				<AgentModelsGroup
+					agent={agent}
+					models={models}
+					defaultWorkerConcurrency={resolvedAgent.workerRequestConcurrency}
+					openMenu={openMenu}
+					setOpenMenu={setOpenMenu}
+					menuAnchorRef={menuAnchorRef}
+					onModelsChange={onModelsChange}
+					onSectionChange={onSectionChange}
+				/>
+			)}
 
 			<SettingsGroup label="Tools" testid="group-tools">
 				{/* The prober's graph tools (wave 7, owner ruling 2026-09-23):
@@ -953,53 +1045,28 @@ export function AgentSection({
 						}}
 					/>
 				</SettingsRow>
-				<SettingsRow
-					label="Include reasoning in token estimates (OpenAI Responses only)"
-					hint="Use saved output-token usage to account for replayed reasoning on matching OpenAI Responses models. Off uses the original text-based estimate."
-					testid="compaction-row-reasoning"
-				>
-					<Toggle
+				{!restricted && (
+					<SettingsRow
 						label="Include reasoning in token estimates (OpenAI Responses only)"
-						checked={resolvedCompaction.includeReasoning}
-						onChange={(includeReasoning) => onCompactionChange({ ...compaction, includeReasoning })}
-					/>
-				</SettingsRow>
-			</SettingsGroup>
-
-			<SettingsGroup label="System prompts" testid="group-prompts">
-				<p className="text-xs text-muted-foreground">Use the switch to choose between the default and your saved override.</p>
-				{promptListStatus !== "ready" && <div className="flex items-center gap-2">
-					{promptListStatus === "failed" ? <p role="alert" className="text-xs text-error">Couldn't load prompt segments.</p> :
-						<p role="status" className="text-xs text-muted-foreground">{prompts ? "Refreshing prompt segments…" : "Loading prompt segments…"}</p>}
-					<Button type="button" size="xs" variant="outline" onClick={() => void readPrompts()}>Retry</Button>
-				</div>}
-				{prompts && (
-					<div className="flex flex-col gap-4">
-						{/* Teacher, Prober, Practice, Shared — shared chunks once,
-						    each agent's own section in prompt-assembly order. */}
-						{sectionedSegments(prompts).map((section) => (
-							<div key={section.id} data-testid={`prompt-section-${section.id}`}>
-								<p className="mb-1 text-xs uppercase tracking-widest text-muted-foreground/70">
-									{section.label}
-								</p>
-								{section.segments.map((info) => <PromptSegmentRow key={info.path}
-									path={info.path} usageHint={info.usageHint} hasOverride={info.overrideText !== null} enabled={info.enabled}
-									busy={promptListStatus !== "ready"} switching={switchPending} error={switchError === info.path ? "Couldn't switch prompt versions." : undefined}
-									onView={row => setOpenSegment({ info, mode: "view", row })}
-									onEdit={row => setOpenSegment({ info, mode: "edit", row })}
-									onToggle={(on) => void switchSegment(info.path, on)}
-								/>)}
-							</div>
-						))}
-					</div>
+						hint="Use saved output-token usage to account for replayed reasoning on matching OpenAI Responses models. Off uses the original text-based estimate."
+						testid="compaction-row-reasoning"
+					>
+						<Toggle
+							label="Include reasoning in token estimates (OpenAI Responses only)"
+							checked={resolvedCompaction.includeReasoning}
+							onChange={(includeReasoning) => onCompactionChange({ ...compaction, includeReasoning })}
+						/>
+					</SettingsRow>
 				)}
 			</SettingsGroup>
-			{openSegment && <PromptSegmentDialog
-				name={promptSegmentName(openSegment.info.path)} returnFocusFallback={openSegment.row} source={openSegment.info.sourceText} override={openSegment.info.overrideText} mode={openSegment.mode}
-				onSave={(text, writeText) => saveSegment(openSegment.info.path, text, writeText)}
-				onDelete={() => deleteSegment(openSegment.info.path)}
-				onClose={() => setOpenSegment(null)}
-			/>}
+
+			{!restricted && (
+				<AgentPromptsGroup
+					agent={agent}
+					onSectionChange={onSectionChange}
+					onDeletePromptOverride={onDeletePromptOverride}
+				/>
+			)}
 		</>
 	);
 }

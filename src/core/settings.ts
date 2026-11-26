@@ -43,6 +43,19 @@ import { COLOR_OVERRIDE_KEYS, isThemeId, type AppearanceColorOverrides } from ".
  *  changes (a field renamed/meaning changed); pure additions never bump. */
 export const CURRENT_SETTINGS_VERSION = 1;
 
+/** Standard-user settings mode: hides developer/admin-only surfaces from the
+ *  Settings UI (Providers tab, Agent model selectors + system prompts, and
+ *  Community plugins). Flip to `false` in an update to restore full view. */
+export const STANDARD_USER_SETTINGS = true;
+
+/** Default slot configuration automatically applied when a standard user
+ *  connects their Magistro account (`MAGISTRO_API_KEY`). */
+export const STANDARD_MAGISTRO_SLOT_DEFAULTS = {
+	strong: { model: { provider: "magistro", id: "deepseek-flash" }, thinkingLevel: "low" },
+	cheap: { model: { provider: "magistro", id: "deepseek-flash" }, thinkingLevel: "low" },
+	vision: { model: { provider: "magistro", id: "deepseek-flash" }, thinkingLevel: "low" },
+} as const satisfies ModelsSettings;
+
 /** The background-agent roles whose models the Agent settings expose.
  *  The conversation pair (prober/teacher) stays out — chat-controlled via
  *  the strong slot (one controller, the model picker). Tests pin the set. */

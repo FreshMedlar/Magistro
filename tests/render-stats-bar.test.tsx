@@ -28,9 +28,13 @@ function turn(over: Partial<TurnUsage> = {}): TurnUsage {
 }
 
 describe("stats bar", () => {
-	it("renders NOTHING on the left when there are no turns yet (owner, wave 7 sweep)", () => {
+	it("renders NOTHING on the left when there are no turns yet; hides model selector in standard mode while keeping thinking", () => {
+		const restrictedHtml = renderToStaticMarkup(<StatsBar turns={[]} />);
+		assert.ok(!restrictedHtml.includes('data-testid="stats-model"'), "model selector hidden in standard mode");
+		assert.match(restrictedHtml, /data-testid="stats-thinking"[^>]*>\s*<span[^>]*>—<\/span>/);
+
 		const html = renderToStaticMarkup(
-			<StatsBar turns={[]} />,
+			<StatsBar restricted={false} turns={[]} />,
 		);
 		assert.match(html, /data-testid="stats-bar"/);
 		// pre-chat: no summary button, no "—" theater (the knowledge-context
@@ -51,7 +55,7 @@ describe("stats bar", () => {
 
 	it("folds context + cost from the turns log (core/prices, no local math)", () => {
 		const html = renderToStaticMarkup(
-			<StatsBar turns={[turn(), turn()]} contextTokens={11_000} pricing={sessionCost({ turns: [turn(), turn()] })} />,
+			<StatsBar restricted={false} turns={[turn(), turn()]} contextTokens={11_000} pricing={sessionCost({ turns: [turn(), turn()] })} />,
 		);
 		// last turn's last call: 10k in + 1k out = 11k. The LIMIT is the
 		// live catalog's — and the bar doesn't hold the index yet (the

@@ -15,8 +15,8 @@
  * MODEL-PROVIDER env vars (provider-keys interlude); anything else is 404
  * — unknown file vars are preserved, not editable.
  */
-import { isWritableAuthKey } from "@/src/server";
-import { deleteKey, saveKey } from "@/src/server";
+import { MAGISTRO_PROVIDER, STANDARD_USER_SETTINGS } from "@/src/core";
+import { deleteKey, ensureStandardMagistroModels, isWritableAuthKey, saveKey } from "@/src/server";
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +38,9 @@ export async function PUT(req: Request, { params }: Params) {
 	}
 	const result = saveKey(id, (body as { value: string }).value);
 	if (!result.ok) return Response.json({ error: result.error }, { status: 400 });
+	if (id === MAGISTRO_PROVIDER.envVar && STANDARD_USER_SETTINGS) {
+		ensureStandardMagistroModels();
+	}
 	return Response.json({ status: result.status });
 }
 

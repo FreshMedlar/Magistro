@@ -40,7 +40,7 @@ import { useEffect, useRef, useState } from "react";
 import { HostDialog } from "@/components/host-dialog";
 import { useInteractionLayers } from "@/components/interaction-layers";
 import type React from "react";
-import { type ModelCatalogEntry, type ModelSlotName, type ModelsSettings, CUSTOM_PROVIDER } from "@/src/core";
+import { type ModelCatalogEntry, type ModelSlotName, type ModelsSettings, CUSTOM_PROVIDER, STANDARD_USER_SETTINGS } from "@/src/core";
 import { prettyModel } from "@/components/usage-format";
 import { ModelMenuList } from "@/components/settings/model-menu";
 import { MenuShell } from "@/components/menu-shell";
@@ -244,11 +244,64 @@ function prefillLevels(body: ModelsBody | undefined): Partial<Record<ModelSlotNa
 	return levels;
 }
 
+export function SetupMagistroBody({
+	starting,
+	authUrl,
+	error,
+	onConnect,
+}: {
+	starting: boolean;
+	authUrl: string | null;
+	error: string | null;
+	onConnect: () => void;
+}) {
+	return (
+		<div className="flex flex-col gap-3 px-6 py-5" data-testid="setup-stage-keys">
+			<p className="text-xs text-muted-foreground">
+				Sign in or create a Magistro account in your browser to start using the app.
+			</p>
+			<div className="flex flex-wrap items-center gap-2">
+				<button
+					type="button"
+					onClick={onConnect}
+					disabled={starting}
+					data-testid="setup-magistro-connect"
+					className="rounded-sm border border-border bg-foreground px-3 py-1.5 font-ui text-xs text-background transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+				>
+					{starting ? "Opening browser…" : "Continue in browser"}
+				</button>
+				{authUrl && (
+					<a
+						href={authUrl}
+						target="_blank"
+						rel="noopener noreferrer"
+						data-testid="setup-magistro-open-link"
+						className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+					>
+						Open sign-in page
+					</a>
+				)}
+			</div>
+			{authUrl && (
+				<p role="status" data-testid="setup-magistro-waiting" className="text-xs text-muted-foreground">
+					Waiting for browser sign-in to finish…
+				</p>
+			)}
+			{error && (
+				<p role="alert" data-testid="setup-key-error" className="text-xs text-error">
+					{error}
+				</p>
+			)}
+		</div>
+	);
+}
+
 interface SetupDialogProps {
 	open: boolean;
 	onClose: () => void;
 	/** Saving never sends the caller's draft. */
 	onDone: (models: ModelsSettings) => void;
+	standardMode?: boolean;
 }
 
 export function SetupDialog(props: SetupDialogProps) {
@@ -257,7 +310,7 @@ export function SetupDialog(props: SetupDialogProps) {
 	return props.open ? <OpenSetupDialog {...props} /> : null;
 }
 
-function OpenSetupDialog({ onClose, onDone }: SetupDialogProps) {
+function OpenSetupDialog({ onClose, onDone, standardMode = STANDARD_USER_SETTINGS }: SetupDialogProps) {
 	const controller = useInteractionLayers();
 	const { catalog, failed, refresh } = useModelCatalog();
 	const providerStageSeen = useRef(false);
@@ -278,6 +331,8 @@ function OpenSetupDialog({ onClose, onDone }: SetupDialogProps) {
 	const [keySaving, setKeySaving] = useState(false);
 	const [keyError, setKeyError] = useState<string | null>(null);
 	const [keyMenuOpen, setKeyMenuOpen] = useState(false);
+	const [connectStarting, setConnectStarting] = useState(false);
+	const [connectAuthUrl, setConnectAuthUrl] = useState<string | null>(null);
 	// Stage 1's provider-picker trigger wrapper — the shared shell's anchor.
 	// Stage 2's slot menus anchor by anchorTestid instead — see the slot
 	// MenuShell below for why a freshly attached ref cannot work there.
@@ -293,13 +348,14 @@ function OpenSetupDialog({ onClose, onDone }: SetupDialogProps) {
 	});
 
 	useEffect(() => {
+		if (standardMode) return;
 		let cancelled = false;
 		fetch("/api/keys")
 			.then((r) => r.json())
 			.then((b: { providers?: ProviderKeyInfo[] }) => { if (!cancelled) setKeyProviders(b.providers ?? []); })
 			.catch(() => { if (!cancelled) setKeyProviders([]); });
 		return () => { cancelled = true; };
-	}, [keysTick]);
+	}, [keysTick, standardMode]);
 
 	useEffect(() => {
 		if (!catalog) return;
@@ -414,7 +470,32 @@ function OpenSetupDialog({ onClose, onDone }: SetupDialogProps) {
 		onDone(models);
 	}
 
-	const keysBody = <SetupKeysBody
+	async function startMagistroConnect() {
+		if (connectStarting) return;
+		setConnectStarting(true);
+		setKeyError(null);
+		const res = await fetch("/api/auth/magistro/start", { method: "POST" }).catch(() => null);
+		setConnectStarting(false);
+		if (!res || !res.ok) {
+			const body = (await res?.json().catch(() => ({}))) as { error?: string } | undefined;
+			setKeyError(body?.error ?? "Could not start browser sign-in. Try again.");
+			return;
+		}
+		const body = (await res.json().catch(() => null)) as { authUrl?: string } | null;
+		if (!body?.authUrl) {
+			setKeyError("Could not start browser sign-in.");
+			return;
+		}
+		setConnectAuthUrl(body.authUrl);
+		window.open(body.authUrl, "_blank", "noopener");
+	}
+
+	const keysBody = standardMode ? <SetupMagistroBody
+		starting={connectStarting}
+		authUrl={connectAuthUrl}
+		error={keyError}
+		onConnect={() => void startMagistroConnect()}
+	/> : <SetupKeysBody
 		providers={keyProviders ? [...keyProviders, CUSTOM_PROVIDER_INFO] : undefined}
 		provider={keyProvider}
 		value={keyValue}
@@ -431,13 +512,15 @@ function OpenSetupDialog({ onClose, onDone }: SetupDialogProps) {
 		onSave={() => void saveKey()}
 	/>;
 
-	return <HostDialog open onClose={() => { onClose(); return "closed"; }} aria-label="Set up your models"
+	const title = standardMode && stage === "keys" ? "Sign in to Magistro" : "Set up your models";
+
+	return <HostDialog open onClose={() => { onClose(); return "closed"; }} aria-label={title}
 		backdropProps={{ className: "fixed inset-0 z-50 flex items-center justify-center bg-background/80", "data-testid": "setup-backdrop" }}
 		frame={<div data-testid="setup-dialog"
 			className="settings-dialog-pop flex max-h-[85vh] w-[640px] max-w-[90vw] flex-col overflow-hidden rounded-md border border-border bg-card shadow-xl"
 			onClick={(e) => e.stopPropagation()} />}>
 				<header className="flex h-15 shrink-0 items-center gap-3 border-b border-border px-5">
-					<h2 className="font-title text-2xl tracking-tight">Set up your models</h2>
+					<h2 className="font-title text-2xl tracking-tight">{title}</h2>
 					<Hint label="Close" binding="escape" side="left">
 <button
 						type="button"

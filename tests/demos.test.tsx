@@ -266,7 +266,6 @@ describe("dispatch card rendering (the tool-call ack box)", () => {
 		);
 		assert.match(html, /Research agent/);
 		assert.match(html, /web_search: (&quot;|")plato/);
-		assert.ok(!html.includes("Dispatched (job j1.)") || true, "ack text is not the display");
 	});
 
 	it("renders the dispatched pulse when the poll has not seen the job yet", () => {

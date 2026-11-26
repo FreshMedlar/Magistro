@@ -38,6 +38,8 @@ export interface ServerEvents {
 	"side-chats-changed": { chatId: string };
 	/** Plugin availability/lifecycle changed; refetch installed packages. */
 	"plugins-changed": Record<string, never>;
+	/** Magistro account connected via external browser callback. */
+	"magistro-connected": Record<string, never>;
 	/** Live-only, plugin-scoped notifications. Reconnect requires snapshot resync. */
 	"plugin-message": { pluginId: string; topic: string; data?: unknown };
 }
@@ -59,6 +61,7 @@ export const SERVER_EVENT_TYPES = [
 	"compaction-changed",
 	"side-chats-changed",
 	"plugins-changed",
+	"magistro-connected",
 	"plugin-message",
 ] as const satisfies readonly ServerEventType[];
 

@@ -16,7 +16,7 @@
  */
 
 import { useEffect, useState } from "react";
-import { CUSTOM_PROVIDER, MODEL_SLOTS, type AuthKeyStatus, type ModelCatalogResponse } from "@/src/core";
+import { CUSTOM_PROVIDER, MODEL_SLOTS, STANDARD_USER_SETTINGS, type AuthKeyStatus, type ModelCatalogResponse } from "@/src/core";
 import { classifyKeys, type ProviderKeyInfo } from "@/components/settings/keys-section";
 import { useModelCatalog } from "@/components/model-catalog";
 
@@ -78,7 +78,15 @@ export function useZeroKeys(): boolean {
 /** The pill itself — the models CTA's chrome and placement, the keys
  *  chain's copy. testid "setup-cta-keys" (the models CTA keeps
  *  "setup-cta"; probes can tell them apart). */
-export function ZeroKeysPill({ onOpen, inline = false }: { onOpen: () => void; inline?: boolean }) {
+export function ZeroKeysPill({
+	onOpen,
+	inline = false,
+	standardMode = STANDARD_USER_SETTINGS,
+}: {
+	onOpen: () => void;
+	inline?: boolean;
+	standardMode?: boolean;
+}) {
 	const button = (
 		<button
 			type="button"
@@ -86,7 +94,7 @@ export function ZeroKeysPill({ onOpen, inline = false }: { onOpen: () => void; i
 			onClick={onOpen}
 			className="rounded-sm border border-border bg-card px-3 py-1.5 font-ui text-xs text-foreground transition-colors hover:border-muted-foreground/50 hover:bg-accent cursor-pointer"
 		>
-			Add a provider key
+			{standardMode ? "Sign in to Magistro" : "Add a provider key"}
 		</button>
 	);
 	return inline ? button : <div className="pointer-events-auto mb-2 flex justify-center">{button}</div>;

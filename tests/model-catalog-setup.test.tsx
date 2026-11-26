@@ -196,7 +196,7 @@ test("Agent opens with cached thinking metadata; refresh and disconnect never cl
 	installFetch(); await warm();
 	const models: ModelsSettings = { strong: { model: { provider: a.provider, id: a.id }, thinkingLevel: "low" } };
 	let changed: ModelsSettings | undefined;
-	await render(<><Reader /><AgentSection agent={undefined} models={models} graph={undefined} compaction={undefined} onSectionChange={() => true} onModelsChange={(next) => { changed = next; }} onCompactionChange={() => true} /></>);
+	await render(<><Reader /><AgentSection restricted={false} agent={undefined} models={models} graph={undefined} compaction={undefined} onSectionChange={() => true} onModelsChange={(next) => { changed = next; }} onCompactionChange={() => true} /></>);
 	await click("slot-thinking-strong"); assert.deepEqual(levels(), ["off", "low✓", "high"]);
 	assert.equal(element("slot-model-strong").textContent, "model:free▾");
 	await answer(1, catalog());
@@ -231,7 +231,7 @@ test("blocked session recovery opens its ordinary picker, never changes Strong o
 		return requestsOnly(input, init);
 	};
 	await warm(body); let selected: string | undefined;
-	await render(<><Reader /><StatsBar turns={[]} chatId="fixture" onModelChange={(id) => { selected = id; }} /></>);
+	await render(<><Reader /><StatsBar restricted={false} turns={[]} chatId="fixture" onModelChange={(id) => { selected = id; }} /></>);
 	assert.equal(selected, `${a.provider}:${a.id}`, "current session does not inherit a different Strong pin");
 	assert.equal(selectedModelUnavailable(body, selected), true);
 	assert.deepEqual(sessionWrites, []);
@@ -259,7 +259,7 @@ for (const result of ["override", "legacy", "http-failure", "network-failure"] a
 		return requestsOnly(input, init);
 	};
 	await warm(body); const identities: Array<string | undefined> = [];
-	await render(<><Reader /><StatsBar turns={[]} chatId="fixture" onModelChange={(id) => { identities.push(id); }} /></>);
+	await render(<><Reader /><StatsBar restricted={false} turns={[]} chatId="fixture" onModelChange={(id) => { identities.push(id); }} /></>);
 	assert.ok(snapshot.catalog, "catalog is already known, not the deferred unknown-catalog case");
 	assert.equal(element("stats-model").textContent, "—▾");
 	assert.equal(identities.at(-1), undefined);
@@ -309,7 +309,7 @@ test("cache retention is hidden by default, slot-specific, resettable, and prese
 	};
 	function Settings() {
 		const [models, setModels] = React.useState(initial);
-		return <AgentSection agent={undefined} models={models} graph={undefined} compaction={undefined} onCompactionChange={() => true} onSectionChange={() => true} onModelsChange={(next) => { changes.push(next); setModels(next); }} />;
+		return <AgentSection restricted={false} agent={undefined} models={models} graph={undefined} compaction={undefined} onCompactionChange={() => true} onSectionChange={() => true} onModelsChange={(next) => { changes.push(next); setModels(next); }} />;
 	}
 	await render(<Settings />); await answer(1, catalog());
 	assert.equal(element("models-advanced").textContent, "Show advanced settings");

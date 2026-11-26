@@ -108,7 +108,7 @@ it("edits one segment with recoverable Settings writes and refreshes without Pro
 		return <button onClick={() => settings.open("agent")}>Open Settings</button>;
 	}
 	try {
-		await act(async () => root.render(<InteractionLayersProvider><SettingsDialogProvider><Entry /></SettingsDialogProvider></InteractionLayersProvider>));
+		await act(async () => root.render(<InteractionLayersProvider><SettingsDialogProvider restricted={false}><Entry /></SettingsDialogProvider></InteractionLayersProvider>));
 		await click(document.body, "Open Settings");
 		assert.match(row().textContent ?? "", /^Doctrine.*In use: Default/);
 		assert.equal(button(row(), "View default").dataset.variant, "ghost");

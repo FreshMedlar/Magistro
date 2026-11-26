@@ -59,7 +59,7 @@ it("dedicated plugin settings pages cover schema/custom/empty/loading/error, dee
 	};
 	const page = () => document.querySelector('[data-testid="settings-content"]');
 	try {
-		await act(async () => { root.render(shell(<SettingsDialogBody initialSection="plugin:schema" onClose={() => {}} />)); });
+		await act(async () => { root.render(shell(<SettingsDialogBody restricted={false} initialSection="plugin:schema" onClose={() => {}} />)); });
 		assert.ok(page()?.textContent?.includes("Feature enabled"), "deep link renders while core settings are pending");
 		const nav = document.querySelector('[data-testid="settings-nav"]')!;
 		assert.deepEqual([...nav.querySelectorAll("button")].map(button => button.textContent), ["Providers", "Agent", "Appearance", "Graph", "Keyboard", "General", "Core plugins", "Community plugins", "Plugin schema", "Plugin custom", "Plugin backend", "Plugin loading", "Plugin broken"]);
@@ -102,16 +102,23 @@ it("dedicated plugin settings pages cover schema/custom/empty/loading/error, dee
 		assert.equal(customCleanups, 2);
 		assert.ok(page()?.querySelector('[data-testid="section-plugins"]'), "uninstall active plugin returns to management");
 		assert.equal(document.querySelector('[data-testid="settings-nav-plugin:custom"]'), null);
-		await act(async () => { root.render(shell(<SettingsDialogBody initialSection="plugin:not-installed" onClose={() => {}} />)); });
+		await act(async () => { root.render(shell(<SettingsDialogBody restricted={false} initialSection="plugin:not-installed" onClose={() => {}} />)); });
 		assert.ok(page()?.querySelector('[data-testid="section-plugins"]'), "missing deep link falls back to management");
 
-		await act(async () => { root.render(shell(<SettingsDialogBody initialSection="plugin:schema" onClose={() => {}} />)); });
+		await act(async () => { root.render(shell(<SettingsDialogBody restricted={false} initialSection="plugin:schema" onClose={() => {}} />)); });
 		await act(async () => { owner.manager.reconcile([info("schema", false), info("backend")]); });
 		assert.ok(page()?.querySelector('[data-testid="section-core-plugins"]'), "disabled core settings return to Core management");
 		await act(async () => { owner.manager.reconcile([info("schema"), info("backend")]); });
 
+		// Restricted mode: community plugins tab and community plugin pages are hidden; deep links fall back to Core plugins.
+		await act(async () => { root.render(shell(<SettingsDialogBody initialSection="plugin:custom" onClose={() => {}} />)); });
+		assert.deepEqual([...document.querySelector('[data-testid="settings-nav"]')!.querySelectorAll("button")].map(button => button.textContent), ["Agent", "Appearance", "Graph", "Keyboard", "General", "Core plugins", "Plugin schema"]);
+		assert.ok(page()?.querySelector('[data-testid="section-core-plugins"]'), "community plugin deep link falls back to Core plugins in restricted mode");
+		assert.equal(document.querySelector('[data-testid="settings-nav-plugins"]'), null);
+		assert.equal(document.querySelector('[data-testid="settings-nav-plugin:custom"]'), null);
+
 		// Backend app.openSettings uses a browser event bridge into this provider.
-		await act(async () => { root.render(shell(<SettingsDialogProvider><p>App</p></SettingsDialogProvider>)); });
+		await act(async () => { root.render(shell(<SettingsDialogProvider restricted={false}><p>App</p></SettingsDialogProvider>)); });
 		await act(async () => { window.dispatchEvent(new dom.window.CustomEvent("lh:open-plugin-settings", { detail: { id: "schema" } })); });
 		assert.equal(document.querySelector('[role="dialog"]'), null, "non-string event details are ignored");
 		await act(async () => { window.dispatchEvent(new dom.window.CustomEvent("lh:open-plugin-settings", { detail: "schema" })); });

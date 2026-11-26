@@ -182,6 +182,11 @@ export function resolveMagistroBaseUrl(rawUrl: string | undefined = undefined): 
 	}
 }
 
+/** Derive the billing/account web URL from the proxy API base URL (strips trailing `/v1`). */
+export function resolveMagistroWebUrl(rawApiBaseUrl: string | undefined = undefined): string {
+	return resolveMagistroBaseUrl(rawApiBaseUrl).replace(/\/v1$/i, "");
+}
+
 /** Every distinct env var a model-provider key rides in (the write side's
  *  writability check — see isProviderEnvVar below; also drives which
  *  PRESENT provider vars surface as status rows). */

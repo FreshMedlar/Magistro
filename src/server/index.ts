@@ -66,4 +66,5 @@ export { claudeCodeInstallationResponse } from "./claude-code.ts";
 // No import side effects; the boot sync lives in stores.ts.
 export * from "./custom-provider.ts";
 export * from "./magistro-provider.ts";
+export { beginMagistroConnect, completeMagistroConnect, ensureStandardMagistroModels } from "./magistro-auth.ts";
 export { customProviderGet, customProviderMutation } from "./custom-provider-http.ts";
